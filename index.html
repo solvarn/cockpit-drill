@@ -496,15 +496,16 @@
 // An `optional` step never blocks you; skipping it has a `consequence` when you move off.
 // `consequence`: 'crash' always crashes when skipped; 'risk' crashes only if traffic is near, else it is noted; 'note' is noted.
 // Redoing a `repeatable` step (a check) is not a mistake. `hinted` optional steps still pulse in Learn mode.
+// `undoes` = ids of steps this step spoils (moving the seat puts the mirrors out again).
 // `needs` = pedal positions required for a click step to work. `shift` steps are done by dragging the gear lever.
 const STEPS = [
-  { control: 'seat',           text: 'Adjust the seat',                         effect: { seat: true }, id: 'seat', optional: true, hinted: true, consequence: 'note',
+  { control: 'seat',           text: 'Adjust the seat',                         effect: { seat: true }, id: 'seat', optional: true, hinted: true, repeatable: true, undoes: ['adjustInterior', 'adjustLeft', 'adjustRight'], consequence: 'note',
     consequenceText: 'You drove without adjusting the seat.' },
-  { control: 'mirrorInterior', text: 'Adjust the interior mirror',              effect: { mirrorInterior: true }, optional: true, hinted: true, repeatable: true, consequence: 'note',
+  { control: 'mirrorInterior', text: 'Adjust the interior mirror',              effect: { mirrorInterior: true }, id: 'adjustInterior', optional: true, hinted: true, repeatable: true, consequence: 'note',
     consequenceText: 'You drove with the interior mirror not adjusted.' },
-  { control: 'mirrorLeft',     text: 'Adjust the left mirror',                  effect: { mirrorLeft: true }, optional: true, hinted: true, repeatable: true, consequence: 'note',
+  { control: 'mirrorLeft',     text: 'Adjust the left mirror',                  effect: { mirrorLeft: true }, id: 'adjustLeft', optional: true, hinted: true, repeatable: true, consequence: 'note',
     consequenceText: 'You drove with the left mirror not adjusted.' },
-  { control: 'mirrorRight',    text: 'Adjust the right mirror',                 effect: { mirrorRight: true }, optional: true, hinted: true, repeatable: true, consequence: 'note',
+  { control: 'mirrorRight',    text: 'Adjust the right mirror',                 effect: { mirrorRight: true }, id: 'adjustRight', optional: true, hinted: true, repeatable: true, consequence: 'note',
     consequenceText: 'You drove with the right mirror not adjusted.' },
   { control: 'belt',           text: 'Fasten the seatbelt',                     effect: { belt: true }, optional: true, hinted: true, consequence: 'note',
     consequenceText: 'You drove without your seatbelt fastened.' },
@@ -741,10 +742,23 @@ function finishGame(game, context) {
 }
 
 
+function resetEffect(effect) {
+  return Object.fromEntries(Object.keys(effect).map(key => [key, INITIAL_CAR[key]]));
+}
+
+function applyUndoes(game, step) {
+  const spoiled = (step.undoes ?? []).map(id => STEPS.findIndex(other => other.id === id)).filter(index => game.doneSteps.includes(index));
+  if (!spoiled.length) return game;
+  const car = spoiled.reduce((current, index) => ({ ...current, ...resetEffect(STEPS[index].effect) }), game.car);
+  const doneSteps = game.doneSteps.filter(index => !spoiled.includes(index));
+  return { ...game, car, doneSteps, notice: 'Moving the seat put the mirrors out: adjust them again.' };
+}
+
 function completeStep(game, index, context) {
+  const undone = applyUndoes(game, STEPS[index]);
   const done = {
-    ...game, doneSteps: [...game.doneSteps, index], lastDone: index,
-    car: { ...game.car, ...STEPS[index].effect }, startedAt: game.startedAt ?? context.now,
+    ...undone, doneSteps: [...undone.doneSteps, index], lastDone: index,
+    car: { ...undone.car, ...STEPS[index].effect }, startedAt: game.startedAt ?? context.now,
   };
   if (STEPS[index].goal === 'moveOff') return crashIfUnchecked(done, context);
   if (STEPS[index].goal === 'cruise') return { ...done, stopLineAt: done.travelled + STOP_LINE_AHEAD_M };
@@ -795,7 +809,7 @@ function clickControl(game, control, context) {
   const repeated = lastDoneWithControl(started, control);
   const isHarmlessRepeat = repeated !== undefined && Boolean(STEPS[repeated].repeatable);
   if (matched === undefined && isHarmlessRepeat) {
-    return { game: { ...started, lastRepeated: repeated }, outcome: OUTCOME.repeat };
+    return { game: { ...applyUndoes(started, STEPS[repeated]), lastRepeated: repeated }, outcome: OUTCOME.repeat };
   }
   if (matched === undefined) {
     return { game: withMistake(started, `Not the ${CONTROL_LABELS[control].toLowerCase()}.`), outcome: OUTCOME.wrong };
