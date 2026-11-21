@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Cockpit Drill</title>
 <style>
   :root { --bg:#14161a; --panel:#1f232a; --text:#e8eaed; --muted:#9aa0a6; --accent:#ffd54a; --good:#4caf50; --bad:#ef5350; }
@@ -33,6 +33,34 @@
   #steps li.current { color:var(--accent); font-weight:600; }
 
   svg { width:100%; height:auto; display:block; border-radius:10px; user-select:none; }
+  /* The cockpit is a game surface: touches operate controls instead of scrolling or zooming the page. */
+  #cockpit { touch-action:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  body { overscroll-behavior:none; }
+  .rotate-hint { display:none; margin:0 0 8px; padding:8px 12px; border-radius:8px; background:#2d333b; color:var(--accent); text-align:center; font-size:14px; }
+  @media (orientation: portrait) and (max-width: 700px) {
+    .rotate-hint { display:block; }
+    header { padding:6px 8px; gap:4px; }
+    header h1 small { display:none; }
+    header button, header select { padding:4px 8px; font-size:13px; }
+    main { padding:8px; }
+    #status { min-height:0; padding:6px 10px; }
+    #status-prompt { font-size:16px; }
+  }
+  /* Phone held sideways: compact header, cockpit fills the remaining height, status floats over the left window. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    header { padding:3px 8px; gap:4px; }
+    header h1 { font-size:13px; }
+    header h1 small { display:none; }
+    header button, header select { padding:2px 8px; font-size:12px; }
+    main { padding:0 6px; max-width:none; }
+    #cockpit-wrap { height:calc(100dvh - 34px); }
+    #cockpit { width:100%; height:100%; }
+    #status { position:absolute; top:4px; left:4px; z-index:4; width:min(36%, 420px); min-height:0; margin:0; padding:4px 8px; background:rgba(20,22,26,.85); pointer-events:none; }
+    #status-step { font-size:10px; }
+    #status-feedback { font-size:11px; min-height:0; }
+    #status-prompt { font-size:13px; }
+    .pedal-help { display:none; }
+  }
   .ctl { cursor:pointer; }
   .ctl:hover { filter:brightness(1.4); }
   .hint { animation:pulse 1s ease-in-out infinite; }
@@ -90,7 +118,6 @@
   .equalizer rect:nth-child(3n) { animation-duration:.6s; }
   @keyframes eq { from { transform:scaleY(.2); } to { transform:scaleY(1); } }
   .wiper { transform-box:view-box; }
-  svg.wiping .wiper { animation:wipe 1.4s ease-in-out; }
   @keyframes wipe { 50% { transform:rotate(80deg); } }
   @keyframes blink { 0% { opacity:1; } 50% { opacity:0; } }
 
@@ -128,6 +155,23 @@
   #airflow path { fill:none; stroke:var(--air-color, #e8eaed); stroke-width:3; stroke-linecap:round; stroke-dasharray:6 10; opacity:0; }
   svg.fan-on #airflow path { opacity:.45; animation:airflow var(--air-speed, 1s) linear infinite; }
   @keyframes airflow { to { stroke-dashoffset:-32; } }
+  select { background:#2d333b; color:var(--text); border:1px solid #444c56; border-radius:6px; padding:6px 8px; font:inherit; }
+  svg.night #skyRect { fill:#0b1022; }
+  svg.night #grassRect { fill:#16210f; }
+  svg.night #roadSurface { fill:#25272b; }
+  svg.night .beam { fill:#fff3b0; }
+  svg.night.lights .beam { opacity:.45; }
+  svg.night #nightShade { opacity:.55; }
+  svg.night .side-glass, svg.night .mirror .view-good { filter:brightness(.3); }
+  svg.rain .side-glass, svg.rain .mirror .view-good { filter:brightness(.8) blur(1px); }
+  svg.night.lights #nightShade { opacity:.25; }
+  svg.rain #skyRect { fill:#8a96a3; }
+  svg.rain:not(.wipers-on) #outside { filter:blur(2.5px); }
+  svg.wipers-on .wiper { animation:wipe 1.4s ease-in-out infinite; }
+  #rain line { stroke:rgba(220,235,255,.55); stroke-width:2; stroke-linecap:round; }
+  svg:not(.rain) #rain { display:none; }
+  #rain line { animation:raindrop var(--drop-speed, .9s) linear infinite; }
+  @keyframes raindrop { from { transform:translateY(-40px); opacity:0; } 20% { opacity:1; } to { transform:translateY(60px); opacity:0; } }
   .road-dash { stroke-dasharray:16 16; }
   svg.moving .road-dash { animation:roll .35s linear infinite; }
   @keyframes roll { to { stroke-dashoffset:-32; } }
@@ -138,19 +182,20 @@
   <h1>Cockpit Drill <small>Octavia III, manual</small></h1>
   <button data-mode="learn" class="active">Learn</button>
   <button data-mode="exam">Exam</button>
+  <select id="conditions" aria-label="Conditions"><option value="day">Day</option><option value="night">Night</option><option value="rain">Rain</option></select>
   <button id="toggle-labels" class="active">Labels</button>
   <button id="toggle-sound" class="active">Sound</button>
   <button id="restart">Restart</button>
 </header>
 <main>
   <div id="drill-view">
+  <p class="rotate-hint">Turn your phone sideways for a bigger cockpit.</p>
+  <div id="cockpit-wrap">
   <div id="status">
     <div id="status-step"></div>
     <div id="status-feedback"></div>
     <div id="status-prompt"></div>
   </div>
-
-  <div id="cockpit-wrap">
   <svg id="cockpit" class="labels" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <clipPath id="sceneClip"><rect x="0" y="0" width="1200" height="900"/></clipPath>
@@ -173,13 +218,14 @@
     </defs>
     <rect x="0" y="0" width="1200" height="900" fill="#24262a"/>
     <g id="scene"><g id="cabin" clip-path="url(#sceneClip)">
-      <!-- outside -->
-      <rect x="0" y="0" width="1200" height="190" fill="url(#sky)"/>
-      <rect x="0" y="180" width="1200" height="180" fill="#5b7f3a"/>
+      <!-- outside (moves as one when the car pitches) -->
+      <g id="outside">
+      <rect id="skyRect" x="0" y="-60" width="1200" height="250" fill="url(#sky)"/>
+      <rect id="grassRect" x="0" y="180" width="1200" height="240" fill="#5b7f3a"/>
       <circle cx="260" cy="172" r="16" fill="#3d6b2a"/><circle cx="290" cy="176" r="11" fill="#3d6b2a"/>
       <circle cx="880" cy="172" r="18" fill="#3d6b2a"/><circle cx="915" cy="177" r="10" fill="#3d6b2a"/>
       <g id="road">
-        <polygon points="560,180 612,180 870,360 -1400,360" fill="#5a5d62"/>
+        <polygon id="roadSurface" points="560,180 612,180 870,360 -1400,360" fill="#5a5d62"/>
         <polygon points="612,180 634,180 1300,360 884,360" fill="#a3a5a8"/>
         <path d="M612 180 L876 360" stroke="#d9d9d9" stroke-width="8"/>
         <path class="road-dash" d="M596 180 L-60 360" stroke="#eee" stroke-width="5"/>
@@ -207,6 +253,12 @@
         <path d="M360 200 L332 238 M360 200 L390 232" stroke="#6a1b9a" stroke-width="9"/>
         <path d="M360 258 L340 318 M360 258 L384 316" stroke="#37474f" stroke-width="11"/>
       </g>
+      <g id="roadside"></g>
+      <polygon id="stopLine" points="0,0" fill="#f5f5f5" visibility="hidden"/>
+      <g id="trafficAhead" visibility="hidden"><rect x="-0.9" y="-1.45" width="1.8" height="1.2" rx="0.25" fill="#1e88e5"/><rect x="-0.7" y="-1.4" width="1.4" height="0.45" rx="0.12" fill="#0d1b2a"/><rect x="-0.85" y="-0.6" width="0.35" height="0.18" fill="#e53935"/><rect x="0.5" y="-0.6" width="0.35" height="0.18" fill="#e53935"/><rect x="-0.9" y="-0.3" width="0.4" height="0.3" fill="#111"/><rect x="0.5" y="-0.3" width="0.4" height="0.3" fill="#111"/></g>
+      <rect id="nightShade" x="0" y="-60" width="1200" height="480" fill="#02040a" opacity="0" pointer-events="none"/>
+      </g>
+      <g id="rain" pointer-events="none"></g>
       <!-- roof, A-pillars, side windows -->
       <rect x="0" y="0" width="1200" height="32" fill="#2b2d31"/>
 
@@ -215,7 +267,7 @@
       <g class="ctl mirror" id="mirrorInterior" data-control="mirrorInterior">
         <rect x="505" y="32" width="190" height="54" rx="20" fill="#121315"/>
         <g class="view-bad"><rect x="511" y="38" width="178" height="42" rx="16" fill="#4a4f57"/><rect x="511" y="38" width="178" height="14" rx="7" fill="#5c626b"/></g>
-        <g class="view-good"><rect x="511" y="38" width="178" height="42" rx="16" fill="#3a3f47"/><rect x="532" y="44" width="136" height="18" fill="#9cc3e6"/><rect x="532" y="60" width="136" height="14" fill="#5b7f3a"/><polygon points="592,60 608,60 640,74 560,74" fill="#5a5d62"/></g>
+        <g class="view-good"><rect x="511" y="38" width="178" height="42" rx="16" fill="#3a3f47"/><rect x="532" y="44" width="136" height="18" fill="#9cc3e6"/><rect x="532" y="60" width="136" height="14" fill="#5b7f3a"/><polygon points="592,60 608,60 640,74 560,74" fill="#5a5d62"/><g id="trafficInterior" visibility="hidden"><rect x="-10" y="-7" width="20" height="10" rx="3" fill="#1e88e5"/><rect x="-7" y="-6" width="14" height="4" rx="1" fill="#90caf9"/><circle cx="-6" cy="1" r="1.6" fill="#fff59d"/><circle cx="6" cy="1" r="1.6" fill="#fff59d"/></g></g>
       </g>
 
       <!-- wipers rest below the dash line and rise when used -->
@@ -301,9 +353,10 @@
 
       <!-- side windows (set lower, beside you) and doors -->
       <g class="ctl" id="shoulder" data-control="shoulder">
-        <polygon points="0,0 132,0 110,396 0,470" fill="url(#sideWin)"/>
+        <polygon class="side-glass" points="0,0 132,0 110,396 0,470" fill="url(#sideWin)"/>
       </g>
-      <polygon points="1200,0 1068,0 1090,396 1200,470" fill="url(#sideWin)"/>
+      <polygon class="side-glass" points="1200,0 1068,0 1090,396 1200,470" fill="url(#sideWin)"/>
+      <g id="trafficWindow" visibility="hidden" pointer-events="none"><rect x="0" y="250" width="105" height="70" rx="14" fill="#1e88e5"/><rect x="10" y="232" width="70" height="30" rx="8" fill="#1565c0"/><rect x="18" y="238" width="50" height="20" rx="4" fill="#90caf9"/><circle cx="25" cy="322" r="14" fill="#111"/><circle cx="88" cy="322" r="14" fill="#111"/></g>
       <path d="M0 0 H215 L205 28 Q110 44 0 70 Z M1200 0 H985 L995 28 Q1090 44 1200 70 Z" fill="#2b2d31"/>
       <polygon points="128,0 218,0 154,362 106,398" fill="#2b2d31"/>
       <polygon points="1072,0 982,0 1046,362 1094,398" fill="#2b2d31"/>
@@ -317,7 +370,7 @@
       <g class="ctl mirror" id="mirrorLeft" data-control="mirrorLeft" transform="translate(8 92)">
         <path d="M16 252 Q16 232 40 232 H108 V294 H34 Q16 294 16 276 Z" fill="#1b1d20"/>
         <g class="view-bad"><rect x="23" y="239" width="78" height="48" rx="10" fill="#4a4f57"/><polygon points="23,287 101,250 101,287" fill="#2e3238"/></g>
-        <g class="view-good"><rect x="23" y="239" width="78" height="24" rx="9" fill="#9cc3e6"/><rect x="23" y="261" width="78" height="26" fill="#5b7f3a"/><polygon points="52,261 60,261 85,287 28,287" fill="#5a5d62"/><rect x="85" y="239" width="16" height="48" fill="#3a3f47"/></g>
+        <g class="view-good"><rect x="23" y="239" width="78" height="24" rx="9" fill="#9cc3e6"/><rect x="23" y="261" width="78" height="26" fill="#5b7f3a"/><polygon points="52,261 60,261 85,287 28,287" fill="#5a5d62"/><g id="trafficLeftMirror" visibility="hidden"><rect x="-10" y="-7" width="20" height="10" rx="3" fill="#1e88e5"/><rect x="-7" y="-6" width="14" height="4" rx="1" fill="#90caf9"/><circle cx="-6" cy="1" r="1.6" fill="#fff59d"/><circle cx="6" cy="1" r="1.6" fill="#fff59d"/></g><rect x="85" y="239" width="16" height="48" fill="#3a3f47"/></g>
       </g>
       <g class="ctl mirror" id="mirrorRight" data-control="mirrorRight" transform="translate(-8 92)">
         <path d="M1184 252 Q1184 232 1160 232 H1092 V294 H1166 Q1184 294 1184 276 Z" fill="#1b1d20"/>
@@ -439,6 +492,7 @@
 // A `floating` step may be done any time (or any time after the step named in `after`),
 //   but before the next non-floating step listed after it.
 // An `optional` step never blocks you; skipping it has a `consequence` when you move off.
+// `consequence`: 'crash' always crashes when skipped; 'risk' crashes only if traffic is near, else it is noted; 'note' is noted.
 // Redoing a `repeatable` step (a check) is not a mistake. `hinted` optional steps still pulse in Learn mode.
 // `needs` = pedal positions required for a click step to work. `shift` steps are done by dragging the gear lever.
 const STEPS = [
@@ -459,9 +513,9 @@ const STEPS = [
   { control: 'ignition',       text: 'Start the engine',                        effect: { engine: true }, id: 'startEngine', gesture: 'engine-start',
     needs: { clutch: [90, 100] }, needsText: 'The engine won’t start: the clutch must be fully down.' },
   { shift: '1',                text: 'Select 1st gear (clutch fully down)' },
-  { control: 'mirrorInterior', text: 'Check the interior mirror',               effect: {}, optional: true, after: 'startEngine', repeatable: true, consequence: 'crash' },
-  { control: 'mirrorLeft',     text: 'Check the left mirror',                   effect: {}, optional: true, after: 'startEngine', repeatable: true, consequence: 'crash' },
-  { control: 'indicator',      text: 'Signal left',                             effect: { indicator: true }, optional: true, after: 'ignitionOn', consequence: 'crash' },
+  { control: 'mirrorInterior', text: 'Check the interior mirror',               effect: {}, optional: true, after: 'startEngine', repeatable: true, consequence: 'risk' },
+  { control: 'mirrorLeft',     text: 'Check the left mirror',                   effect: {}, optional: true, after: 'startEngine', repeatable: true, consequence: 'risk' },
+  { control: 'indicator',      text: 'Signal left',                             effect: { indicator: true }, optional: true, after: 'ignitionOn', consequence: 'risk' },
   { control: 'shoulder',       text: 'Look over your left shoulder (blind spot)', effect: {}, optional: true, after: 'startEngine', repeatable: true, consequence: 'crash' },
   { control: 'handbrake',      text: 'Release the handbrake',                   effect: { handbrake: false }, floating: true, after: 'startEngine' },
   { control: 'lights',         text: 'Light switch to AUTO',                     effect: { lights: true }, optional: true, consequence: 'note',
@@ -471,6 +525,9 @@ const STEPS = [
   { shift: '2',                text: 'Shift up to 2nd: clutch down, lever to 2, clutch up, gas' },
   { shift: '3',                text: 'Shift up to 3rd' },
   { pedal: 'gas',              text: 'Drive at 40 km/h in 3rd', goal: 'cruise' },
+  { pedal: 'brake',            text: 'Brake smoothly and stop at the stop line (clutch down before you stall)', goal: 'stopAtLine' },
+  { shift: 'N',                text: 'Back to neutral' },
+  { control: 'handbrake',      text: 'Pull the handbrake', effect: { handbrake: true }, finish: true },
 ];
 
 const CONTROL_LABELS = {
@@ -585,7 +642,7 @@ const HAZARD_TEXT = { car: 'a car overtaking you', cyclist: 'a cyclist in your b
 function newGame(mode) {
   return {
     mode, doneSteps: [], lastDone: null, car: { ...INITIAL_CAR }, pedals: { clutch: 0, brake: 0, gas: 0 },
-    biteEnteredAt: null, speed: 0, rpm: 0, mistakes: [], notice: null, startedAt: null, finishedAt: null, crash: null, skipped: [],
+    biteEnteredAt: null, speed: 0, rpm: 0, travelled: 0, stopLineAt: null, crossedLine: false, mistakes: [], notice: null, startedAt: null, finishedAt: null, crash: null, skipped: [],
   };
 }
 
@@ -666,13 +723,15 @@ function skippedOptionalSteps(game) {
 
 function finishGame(game, context) {
   const skipped = skippedOptionalSteps(game);
-  const crashed = skipped.some(index => STEPS[index].consequence === 'crash');
+  const crashed = Boolean(context.crashed);
   const skipMistakes = skipped.map(index => ({ stepIndex: index, text: `Skipped: ${STEPS[index].text}` }));
+  const conditionNotes = (game.moveOffNotes ?? context.conditionNotes ?? []).map(text => ({ stepIndex: 0, text }));
   return {
     ...game, finishedAt: context.now, skipped, crash: crashed ? context.hazard : null,
-    mistakes: [...game.mistakes, ...skipMistakes], car: { ...game.car, crashed },
+    mistakes: [...game.mistakes, ...skipMistakes, ...conditionNotes], car: { ...game.car, crashed },
   };
 }
+
 
 function completeStep(game, index, context) {
   const done = {
@@ -680,13 +739,21 @@ function completeStep(game, index, context) {
     car: { ...game.car, ...STEPS[index].effect }, startedAt: game.startedAt ?? context.now,
   };
   if (STEPS[index].goal === 'moveOff') return crashIfUnchecked(done, context);
-  if (STEPS[index].goal === 'cruise') return finishGame(done, context);
+  if (STEPS[index].goal === 'cruise') return { ...done, stopLineAt: done.travelled + STOP_LINE_AHEAD_M };
+  if (STEPS[index].finish) return finishGame(done, context);
   return done;
 }
 
+function crashHazard(game, context) {
+  if (context.trafficNear) return 'car';
+  const blindSpotSkipped = skippedOptionalSteps(game).some(index => STEPS[index].consequence === 'crash');
+  return blindSpotSkipped ? context.blindSpotHazard : null;
+}
+
 function crashIfUnchecked(game, context) {
-  const crashed = skippedOptionalSteps(game).some(index => STEPS[index].consequence === 'crash');
-  return crashed ? finishGame(game, context) : { ...game, speed: MOVE_OFF_SPEED_KMH };
+  const hazard = crashHazard(game, context);
+  if (hazard) return finishGame(game, { ...context, hazard, crashed: true });
+  return { ...game, speed: MOVE_OFF_SPEED_KMH, moveOffNotes: context.conditionNotes ?? [] };
 }
 
 function selectGear(game, gear, context) {
@@ -850,10 +917,45 @@ function advanceDriving(game, elapsedMs, context) {
   const withSpeed = { ...game, speed };
   const driven = { ...withSpeed, rpm: engineRpm(withSpeed) };
   if (shouldStall(driven)) return stall(driven, 'Revs too low for this gear.');
-  const noticed = { ...driven, notice: revNotice(driven) };
-  if (!reachedCruise(noticed)) return noticed;
-  const cruiseIndex = STEPS.findIndex(step => step.goal === 'cruise');
-  return completeStep(noticed, cruiseIndex, context);
+  const travelled = driven.travelled + speed / KMH_PER_MPS * elapsedMs / MS_PER_SECOND;
+  const noticed = checkStopLine({ ...driven, travelled, notice: revNotice(driven) });
+  if (reachedCruise(noticed)) return completeStep(noticed, STEPS.findIndex(step => step.goal === 'cruise'), context);
+  if (stoppedAtLine(noticed)) return completeStep(noticed, STEPS.findIndex(step => step.goal === 'stopAtLine'), context);
+  return noticed;
+}
+
+const STOP_LINE_AHEAD_M = 150;
+const STOP_LINE_ZONE_M = 15;
+const KMH_PER_MPS = 3.6;
+const STOPPED_KMH = 0.3;
+
+function lineGap(game) {
+  return game.stopLineAt === null ? null : game.stopLineAt - game.travelled;
+}
+
+function checkStopLine(game) {
+  const gap = lineGap(game);
+  const justCrossed = gap !== null && gap < 0 && !game.crossedLine;
+  if (!justCrossed) return game;
+  return { ...withMistake(game, 'You rolled over the stop line.'), crossedLine: true };
+}
+
+function stoppedAtLine(game) {
+  const isCandidate = candidateIndexes(game).some(index => STEPS[index].goal === 'stopAtLine');
+  const gap = lineGap(game);
+  const closeEnough = gap !== null && (game.crossedLine || gap <= STOP_LINE_ZONE_M);
+  return isCandidate && game.speed < STOPPED_KMH && closeEnough;
+}
+
+const BITE_REV_DIP = 0.28;
+
+function stationaryRpm(game) {
+  const dip = game.car.gear === 'N' ? 0 : BITE_REV_DIP * clutchEngagement(game);
+  return freeRevs(game) * (1 - dip);
+}
+
+function currentRpm(game) {
+  return game.car.moving ? game.rpm : stationaryRpm(game);
 }
 
 function needleAngle(value, max) {
@@ -862,7 +964,7 @@ function needleAngle(value, max) {
 
 function tachAngle(game) {
   if (game.car.crashed || !game.car.engine) return NEEDLE_ANGLE.rest;
-  const rpm = game.car.moving ? game.rpm : freeRevs(game);
+  const rpm = currentRpm(game);
   return needleAngle(rpm, TACH_MAX_RPM);
 }
 
@@ -878,6 +980,7 @@ function displayLines(game) {
   if (!car.ignitionOn) return ['', ''];
   if (car.stalled) return ['STALLED', 'restart'];
   if (car.moving) return [`${Math.round(game.speed)} km/h`, drivingStateText(game)];
+  if (car.engine && clutchEngagement(game) > 0) return ['12:00', 'biting'];
   if (car.engine) return ['12:00', `gear ${car.gear}`];
   return ['12:00', 'engine off'];
 }
@@ -901,6 +1004,7 @@ function renderGauges(game) {
 
 function renderCar(game) {
   FLAG_KEYS.forEach(key => cockpit.classList.toggle(key, game.car[key]));
+  renderWipers(game.car);
   moveLeverTo(game.car.gear);
   renderGauges(game);
 }
@@ -1007,17 +1111,28 @@ function feedbackText(game, feedback) {
   return `✓ ${STEPS[game.lastDone].text}`;
 }
 
+function countMistakes(game, prefix) {
+  return game.mistakes.filter(mistake => mistake.text.startsWith(prefix)).length;
+}
+
+function scoreLine(game) {
+  const skippedChecks = game.skipped.filter(index => STEPS[index].consequence !== 'note').length;
+  return `Stalls ${countMistakes(game, 'Stalled')} · Crunches ${countMistakes(game, 'Crunch')} · Lurches ${countMistakes(game, 'Too much gas')} · Checks skipped ${skippedChecks}`;
+}
+
 function mistakeSummary(game) {
   const notes = game.skipped.filter(index => STEPS[index].consequence === 'note').map(index => STEPS[index].consequenceText);
   const others = game.mistakes.filter(mistake => !mistake.text.startsWith('Skipped')).map(mistake => mistake.text);
-  const skippedChecks = game.skipped.filter(index => STEPS[index].consequence === 'crash').map(index => STEPS[index].text);
-  const skippedLine = skippedChecks.length ? [`You skipped: ${skippedChecks.join(', ')}.`] : [];
-  return [...skippedLine, ...notes, ...new Set(others)].join(' · ') || 'Clean run!';
+  const risky = game.skipped.filter(index => STEPS[index].consequence === 'risk').map(index => STEPS[index].text);
+  const blind = game.skipped.filter(index => STEPS[index].consequence === 'crash').map(index => STEPS[index].text);
+  const skippedLine = [...risky, ...blind].length ? [`You skipped: ${[...risky, ...blind].join(', ')}.${!game.crash && risky.length ? ' Nobody was coming this time: lucky.' : ''}`] : [];
+  const details = [...skippedLine, ...notes, ...new Set(others)].join(' · ') || 'Clean run!';
+  return `${scoreLine(game)}. ${details}${bestTimeText(game)}`;
 }
 
 function finishPrompt(game) {
   if (game.crash) return `💥 You hit ${HAZARD_TEXT[game.crash]}! Press Restart.`;
-  return 'You moved off safely and reached 40 km/h in 3rd. Press Restart to go again.';
+  return 'Lesson complete: moved off, drove up to 3rd and stopped at the line. Press Restart to go again.';
 }
 
 function finishStatus(game) {
@@ -1169,6 +1284,7 @@ function renderCrash(game) {
 }
 
 function render(game, feedback) {
+  recordBestTime(game);
   renderCar(game);
   renderPedals(game);
   renderCrash(game);
@@ -1185,7 +1301,6 @@ function flash(element, className) {
 const HORN_MS = 350;
 const HORN_FREQUENCIES_HZ = [420, 520];
 const HORN_VOLUME = 0.06;
-const WIPE_MS = 1400;
 const RADIO_TEXT = '♪ Radio 104.6';
 const CLOCK_TEXT = '12:00';
 let audioContext = null;
@@ -1220,11 +1335,17 @@ function toggleGlovebox() {
   return isOpen ? 'Glovebox open: the manual and your sunglasses.' : 'Glovebox closed.';
 }
 
-function sweepWipers(car) {
+let wipersOn = false;
+
+function renderWipers(car) {
+  cockpit.classList.toggle('wipers-on', wipersOn && car.ignitionOn);
+}
+
+function toggleWipers(car) {
   if (!car.ignitionOn) return 'Wipers need the ignition on.';
-  cockpit.classList.add('wiping');
-  setTimeout(() => cockpit.classList.remove('wiping'), WIPE_MS);
-  return 'Swish.';
+  wipersOn = !wipersOn;
+  renderWipers(car);
+  return wipersOn ? 'Wipers on.' : 'Wipers off.';
 }
 
 function toggleRadio() {
@@ -1311,7 +1432,7 @@ function toggleAc(car) {
 }
 
 const TOYS = {
-  horn: playHorn, hazard: toggleHazard, glovebox: toggleGlovebox, wipers: sweepWipers, radio: toggleRadio,
+  horn: playHorn, hazard: toggleHazard, glovebox: toggleGlovebox, wipers: toggleWipers, radio: toggleRadio,
   climateTemp: turnTemperature, climateFan: turnFan, climateAc: toggleAc,
 };
 
@@ -1446,7 +1567,7 @@ function updateEngineVoice(game) {
     return;
   }
   engineVoice = engineVoice ?? startEngineVoice();
-  const rpm = game.car.moving ? game.rpm : freeRevs(game);
+  const rpm = currentRpm(game);
   const firingHz = rpm * SOUND.firingPerRpm;
   const now = audioContext.currentTime;
   const glide = 0.05;
@@ -1467,14 +1588,44 @@ function setIndicatorTicking(isOn) {
   indicatorTimer = isOn ? setInterval(playTick, SOUND.tickMs) : null;
 }
 
+const VIBRATION = { stall: 250, crunch: [40, 30, 40, 30, 80], crash: [300, 100, 300], shift: 15, lurch: 120 };
+const JOLT_PX = { stall: -9, lurch: 7, crash: -14 };
+
+function vibrate(pattern) {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch (error) {
+    console.warn('Vibration unavailable', error);
+  }
+}
+
+function newMistakeStartsWith(previous, current, game, prefix) {
+  return current.mistakes > previous.mistakes && Boolean(game.mistakes.at(-1)?.text?.startsWith(prefix));
+}
+
 function playSoundEvents(previous, current, game) {
+  const stalled = previous.engine && !current.engine && game.car.stalled;
   if (!previous.engine && current.engine) playStarter();
-  if (previous.engine && !current.engine && game.car.stalled) playStallThud();
-  if (previous.gear !== current.gear) playShift();
-  if (!previous.crash && current.crash) playCrash();
-  const lastMistake = game.mistakes.at(-1);
-  const isNewCrunch = current.mistakes > previous.mistakes && Boolean(lastMistake?.text?.startsWith('Crunch'));
-  if (isNewCrunch) playCrunch();
+  if (stalled) {
+    playStallThud();
+    vibrate(VIBRATION.stall);
+    jolt(JOLT_PX.stall);
+  }
+  if (previous.gear !== current.gear) {
+    playShift();
+    vibrate(VIBRATION.shift);
+  }
+  if (!previous.crash && current.crash) {
+    playCrash();
+    vibrate(VIBRATION.crash);
+    jolt(JOLT_PX.crash);
+  }
+  if (newMistakeStartsWith(previous, current, game, 'Too much gas')) {
+    vibrate(VIBRATION.lurch);
+    jolt(JOLT_PX.lurch);
+  }
+  const isNewCrunch = newMistakeStartsWith(previous, current, game, 'Crunch');
+  if (isNewCrunch) vibrate(VIBRATION.crunch);
   if (previous.indicator !== current.indicator) setIndicatorTicking(current.indicator && soundEnabled);
 }
 
@@ -1561,10 +1712,230 @@ document.getElementById('toggle-sound').addEventListener('click', event => {
   syncSound(game);
 });
 
+// ---- world: roadside objects, traffic, pitch, conditions ----
+const WORLD = { horizonY: 180, vanishX: 606, focal: 600, cameraHeightM: 1.2, nearestZ: 1.2, farZ: 170, pulledOutShiftM: 1.7, crashShiftM: 0.15, shiftRate: 1.1 };
+const ROADSIDE_LAYOUT = [
+  { kind: 'tree', x: 7, spacing: 24, offset: 9 },
+  { kind: 'lamp', x: 2.6, spacing: 40, offset: 20 },
+  { kind: 'tree', x: -13, spacing: 30, offset: 15 },
+  { kind: 'sign', x: 3, spacing: 120, offset: 60 },
+];
+const SPRITES = {
+  tree: '<rect x="-0.25" y="-2.6" width="0.5" height="2.6" fill="#5d4037"/><circle cy="-4.2" r="2.1" fill="#2e6b2a"/><circle cx="0.8" cy="-3.6" r="1.3" fill="#38803a"/>',
+  lamp: '<rect x="-0.08" y="-6" width="0.16" height="6" fill="#9ea3a8"/><rect x="-1" y="-6.1" width="1.08" height="0.16" fill="#9ea3a8"/><rect x="-1.05" y="-6" width="0.4" height="0.14" fill="#fffde7"/>',
+  sign: '<rect x="-0.05" y="-2.4" width="0.1" height="2.4" fill="#9ea3a8"/><circle cy="-2.7" r="0.45" fill="#fff" stroke="#e53935" stroke-width="0.12"/><text y="-2.55" font-size="0.42" font-weight="700" text-anchor="middle" fill="#111">50</text>',
+};
+const STOP_LINE_SPAN_M = { left: -5.5, right: 1.8, depth: 0.6 };
+const TRAFFIC = {
+  speedKmh: 35, spawnBehindM: 110, firstDelayMs: 4000, gapMinMs: 9000, gapMaxMs: 17000,
+  nearBehindM: 25, nearAheadM: 4, despawnAheadM: 130, despawnBehindM: 170,
+  interiorMirrorM: [6, 90], leftMirrorM: [3, 45], alongsideM: [-4, 3], laneX: -2.2,
+};
+const BLIND_SPOT_HAZARDS = ['cyclist', 'pedestrian'];
+const PITCH = { perKmhPerS: 0.45, min: -9, max: 6, bitePx: 3, response: 5 };
+const RAIN_DROPS = 46;
+
+const outside = document.getElementById('outside');
+const roadsideLayer = document.getElementById('roadside');
+const stopLine = document.getElementById('stopLine');
+const trafficSprites = {
+  interior: document.getElementById('trafficInterior'), leftMirror: document.getElementById('trafficLeftMirror'),
+  window: document.getElementById('trafficWindow'), ahead: document.getElementById('trafficAhead'),
+};
+
+function createRoadsideObjects() {
+  return ROADSIDE_LAYOUT.flatMap(layout => {
+    const count = Math.ceil(WORLD.farZ / layout.spacing);
+    return Array.from({ length: count }, (_, index) => ({ ...layout, z: layout.offset + index * layout.spacing, span: count * layout.spacing }));
+  });
+}
+
+let roadsideObjects = createRoadsideObjects();
+roadsideLayer.innerHTML = roadsideObjects.map(object => `<g>${SPRITES[object.kind]}</g>`).join('');
+const roadsideElements = [...roadsideLayer.children];
+let world = { laneShift: 0, pitch: 0, lastSpeed: 0 };
+let traffic = { distance: null, nextSpawnAt: null };
+
+function project(x, z) {
+  const scale = WORLD.focal / z;
+  return { x: WORLD.vanishX + (x + world.laneShift) * scale, y: WORLD.horizonY + WORLD.cameraHeightM * scale, scale };
+}
+
+function placeSprite(element, x, z) {
+  const isVisible = z > WORLD.nearestZ && z < WORLD.farZ;
+  element.setAttribute('visibility', isVisible ? 'visible' : 'hidden');
+  if (!isVisible) return;
+  const point = project(x, z);
+  element.setAttribute('transform', `translate(${point.x.toFixed(1)} ${point.y.toFixed(1)}) scale(${point.scale.toFixed(3)})`);
+}
+
+function moveRoadside(metres) {
+  roadsideObjects = roadsideObjects.map(object => {
+    const z = object.z - metres;
+    return { ...object, z: z < WORLD.nearestZ ? z + object.span : z };
+  });
+  roadsideObjects.forEach((object, index) => placeSprite(roadsideElements[index], object.x, object.z));
+}
+
+function targetLaneShift(game) {
+  if (!game.car.moving) return 0;
+  return game.car.crashed ? WORLD.crashShiftM : WORLD.pulledOutShiftM;
+}
+
+function renderStopLine(game) {
+  const gap = lineGap(game);
+  const isVisible = gap !== null && gap > WORLD.nearestZ && gap < WORLD.farZ;
+  stopLine.setAttribute('visibility', isVisible ? 'visible' : 'hidden');
+  if (!isVisible) return;
+  const corners = [[STOP_LINE_SPAN_M.left, gap], [STOP_LINE_SPAN_M.right, gap], [STOP_LINE_SPAN_M.right, gap + STOP_LINE_SPAN_M.depth], [STOP_LINE_SPAN_M.left, gap + STOP_LINE_SPAN_M.depth]];
+  stopLine.setAttribute('points', corners.map(([x, z]) => { const point = project(x, z); return `${point.x.toFixed(1)},${point.y.toFixed(1)}`; }).join(' '));
+}
+
+function isTrafficNear() {
+  return traffic.distance !== null && traffic.distance <= TRAFFIC.nearBehindM && traffic.distance >= -TRAFFIC.nearAheadM;
+}
+
+function within(value, [low, high]) {
+  return value !== null && value > low && value <= high;
+}
+
+function randomBetween(low, high) {
+  return low + Math.random() * (high - low);
+}
+
+function advanceTraffic(game, seconds, now) {
+  const engineHasRun = game.car.engine || game.car.moving;
+  if (!engineHasRun || isFinished(game)) return;
+  if (traffic.nextSpawnAt === null) traffic = { ...traffic, nextSpawnAt: now + TRAFFIC.firstDelayMs };
+  if (traffic.distance === null) {
+    if (now >= traffic.nextSpawnAt) traffic = { ...traffic, distance: TRAFFIC.spawnBehindM };
+    return;
+  }
+  const distance = traffic.distance - (TRAFFIC.speedKmh - game.speed) / KMH_PER_MPS * seconds;
+  const isGone = distance < -TRAFFIC.despawnAheadM || distance > TRAFFIC.despawnBehindM;
+  traffic = isGone ? { distance: null, nextSpawnAt: now + randomBetween(TRAFFIC.gapMinMs, TRAFFIC.gapMaxMs) } : { ...traffic, distance };
+}
+
+function showSprite(element, isVisible, transform) {
+  element.setAttribute('visibility', isVisible ? 'visible' : 'hidden');
+  if (isVisible) element.setAttribute('transform', transform);
+}
+
+function renderTraffic(game) {
+  const distance = game.car.crashed ? null : traffic.distance;
+  const interiorScale = Math.min(2.2, Math.max(0.25, 160 / Math.max(distance ?? 1, 1)));
+  showSprite(trafficSprites.interior, within(distance, TRAFFIC.interiorMirrorM), `translate(${600 - 25 * interiorScale} ${62 + 4 * interiorScale}) scale(${interiorScale})`);
+  const mirrorScale = Math.min(3, Math.max(0.4, 90 / Math.max(distance ?? 1, 1)));
+  showSprite(trafficSprites.leftMirror, within(distance, TRAFFIC.leftMirrorM), `translate(${70 - 6 * mirrorScale} ${266 + 2 * mirrorScale}) scale(${mirrorScale})`);
+  showSprite(trafficSprites.window, within(distance, TRAFFIC.alongsideM), '');
+  const ahead = distance !== null && distance < TRAFFIC.alongsideM[0];
+  trafficSprites.ahead.setAttribute('visibility', 'hidden');
+  if (ahead) placeSprite(trafficSprites.ahead, TRAFFIC.laneX, -distance);
+}
+
+function trafficVisibleIn(control) {
+  const ranges = { mirrorInterior: TRAFFIC.interiorMirrorM, mirrorLeft: TRAFFIC.leftMirrorM };
+  return within(traffic.distance, ranges[control] ?? [0, -1]);
+}
+
+function jolt(pixels) {
+  world = { ...world, pitch: world.pitch + pixels };
+}
+
+function updatePitch(game, seconds) {
+  const acceleration = seconds > 0 ? (game.speed - world.lastSpeed) / seconds : 0;
+  const biting = !game.car.moving && game.car.engine ? clutchEngagement(game) * PITCH.bitePx : 0;
+  const target = Math.min(PITCH.max, Math.max(PITCH.min, acceleration * PITCH.perKmhPerS)) + biting;
+  const pitch = world.pitch + (target - world.pitch) * Math.min(1, seconds * PITCH.response);
+  world = { ...world, pitch, lastSpeed: game.speed };
+  outside.setAttribute('transform', `translate(0 ${pitch.toFixed(2)})`);
+}
+
+function updateWorld(game, seconds, now) {
+  advanceTraffic(game, seconds, now);
+  const laneShift = world.laneShift + (targetLaneShift(game) - world.laneShift) * Math.min(1, seconds * WORLD.shiftRate);
+  world = { ...world, laneShift };
+  const rolling = game.car.crashed ? 0 : game.speed / KMH_PER_MPS * seconds;
+  moveRoadside(rolling);
+  renderStopLine(game);
+  renderTraffic(game);
+  updatePitch(game, seconds);
+}
+
+function resetWorld() {
+  world = { laneShift: 0, pitch: 0, lastSpeed: 0 };
+  traffic = { distance: null, nextSpawnAt: null };
+  roadsideObjects = createRoadsideObjects();
+}
+
+// ---- conditions: day, night, rain ----
+let conditions = 'day';
+
+function conditionNotes() {
+  const rainWithoutWipers = conditions === 'rain' && !wipersOn;
+  return rainWithoutWipers ? ['You moved off in the rain without the wipers on.'] : [];
+}
+
+function buildRain() {
+  const drops = Array.from({ length: RAIN_DROPS }, () => {
+    const x = randomBetween(230, 980);
+    const y = randomBetween(40, 300);
+    const delay = randomBetween(0, 0.9).toFixed(2);
+    return `<line x1="${x.toFixed(0)}" y1="${y.toFixed(0)}" x2="${(x - 3).toFixed(0)}" y2="${(y + 14).toFixed(0)}" style="animation-delay:-${delay}s"/>`;
+  });
+  document.getElementById('rain').innerHTML = drops.join('');
+}
+
+document.getElementById('conditions').addEventListener('change', event => {
+  conditions = event.target.value;
+  ['night', 'rain'].forEach(name => cockpit.classList.toggle(name, conditions === name));
+});
+
+buildRain();
+
+// ---- best clean time per mode (this browser only) ----
+const BEST_KEY_PREFIX = 'cockpitDrill.bestCleanSeconds.';
+let recordedFinishAt = null;
+
+function readBest(mode) {
+  try {
+    const value = localStorage.getItem(BEST_KEY_PREFIX + mode);
+    return value === null ? null : Number(value);
+  } catch (error) {
+    return null;
+  }
+}
+
+function finishSeconds(game) {
+  return Math.round((game.finishedAt - game.startedAt) / MS_PER_SECOND);
+}
+
+function recordBestTime(game) {
+  const isCleanFinish = isFinished(game) && !game.crash && game.mistakes.length === 0;
+  if (!isCleanFinish || recordedFinishAt === game.finishedAt) return;
+  recordedFinishAt = game.finishedAt;
+  const best = readBest(game.mode);
+  const seconds = finishSeconds(game);
+  if (best !== null && best <= seconds) return;
+  try {
+    localStorage.setItem(BEST_KEY_PREFIX + game.mode, String(seconds));
+  } catch (error) {
+    console.warn('Could not save best time', error);
+  }
+}
+
+function bestTimeText(game) {
+  const best = readBest(game.mode);
+  return best === null ? '' : ` · Best clean time (${game.mode}): ${best}s`;
+}
+
 let game = newGame(MODE.learn);
 
 function actionContext() {
-  return { now: performance.now(), hazard: randomItem(HAZARDS) };
+  return {
+    now: performance.now(), hazard: randomItem(HAZARDS), blindSpotHazard: randomItem(BLIND_SPOT_HAZARDS),
+    trafficNear: isTrafficNear(), conditionNotes: conditionNotes(),
+  };
 }
 
 function randomItem(items) {
@@ -1587,6 +1958,7 @@ cockpit.addEventListener('click', event => {
   const flashClass = FLASH_CLASS[result.outcome];
   if (flashClass) flash(element, flashClass);
   render(game, { kind: result.outcome, control });
+  if (trafficVisibleIn(control)) document.getElementById('status-feedback').textContent = '🚗 A car is coming in the mirror: wait until it has passed.';
   const gestureStep = { [OUTCOME.right]: game.lastDone, [OUTCOME.repeat]: game.lastRepeated }[result.outcome];
   const gesture = gestureStep === undefined || gestureStep === null ? null : STEPS[gestureStep].gesture;
   if (gesture) GESTURES[gesture]();
@@ -1754,6 +2126,7 @@ function drivingFrame(now) {
   const changed = game.doneSteps.length !== before.doneSteps.length || game.mistakes.length !== before.mistakes.length || game.notice !== before.notice;
   if (changed) render(game, pedalFeedback(before, game) ?? { kind: OUTCOME.repeat });
   if (!changed && game !== before) renderGauges(game);
+  updateWorld(game, elapsedMs / MS_PER_SECOND, now);
   requestAnimationFrame(drivingFrame);
 }
 
@@ -1762,12 +2135,14 @@ requestAnimationFrame(drivingFrame);
 document.querySelectorAll('[data-mode]').forEach(button => {
   button.addEventListener('click', () => {
     document.querySelectorAll('[data-mode]').forEach(other => other.classList.toggle('active', other === button));
+    resetWorld();
     game = newGame(button.dataset.mode);
     render(game, null);
   });
 });
 
 document.getElementById('restart').addEventListener('click', () => {
+  resetWorld();
   game = newGame(game.mode);
   render(game, null);
 });
