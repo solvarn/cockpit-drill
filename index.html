@@ -49,19 +49,22 @@
     #status-prompt { font-size:16px; }
   }
   /* Phone held sideways: compact header, cockpit fills the remaining height, status floats over the left window. */
+  /* Phone held sideways: every pixel of height goes to the cockpit. Buttons become a slim column on the
+     right, the instructions use the empty space on the left, nothing overlaps the controls. */
   @media (orientation: landscape) and (max-height: 560px) {
-    header { padding:3px 8px; gap:4px; }
-    header h1 { font-size:13px; }
-    header h1 small { display:none; }
-    header button, header select { padding:2px 8px; font-size:12px; }
-    main { padding:0 6px; max-width:none; }
-    #cockpit-wrap { height:calc(100dvh - 34px); }
-    #cockpit { width:100%; height:100%; }
-    #status { position:absolute; top:4px; left:4px; z-index:4; width:min(36%, 420px); min-height:0; margin:0; padding:4px 8px; background:rgba(20,22,26,.85); pointer-events:none; }
+    body { display:flex; flex-direction:row-reverse; height:100dvh; overflow:hidden; }
+    header { flex-direction:column; align-items:stretch; justify-content:flex-start; flex-wrap:nowrap; gap:4px; padding:4px; width:76px; overflow-y:auto; }
+    header h1 { display:none; }
+    header button, header select { padding:4px 2px; font-size:11px; width:100%; }
+    main { flex:1; min-width:0; height:100dvh; padding:0; max-width:none; }
+    #drill-view, #cockpit-wrap { height:100%; }
+    #cockpit-wrap { display:flex; align-items:stretch; }
+    #status { flex:1; min-width:0; min-height:0; margin:0; border-radius:0; padding:6px 8px; overflow-y:auto; }
     #status-step { font-size:10px; }
     #status-feedback { font-size:11px; min-height:0; }
     #status-prompt { font-size:13px; }
-    .pedal-help { display:none; }
+    #cockpit { flex:none; height:100%; width:auto; aspect-ratio:4 / 3; border-radius:0; }
+    .pedal-help, #steps, .rotate-hint { display:none; }
   }
   .ctl { cursor:pointer; }
   .ctl:hover { filter:brightness(1.4); }
@@ -189,6 +192,7 @@
   <select id="conditions" aria-label="Conditions"><option value="day">Day</option><option value="night">Night</option><option value="rain">Rain</option></select>
   <button id="toggle-labels" class="active">Labels</button>
   <button id="toggle-sound" class="active">Sound</button>
+  <button id="fullscreen" title="Full screen, landscape">Full screen</button>
   <button id="restart">Restart</button>
 </header>
 <main>
@@ -2015,6 +2019,27 @@ function bestTimeText(game) {
   const best = readBest(game.mode);
   return best === null ? '' : ` · Best clean time (${game.mode}): ${best}s`;
 }
+
+// ---- full screen: hides the browser bars on phones and asks for landscape ----
+const fullscreenButton = document.getElementById('fullscreen');
+
+async function enterFullscreen() {
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    await screen.orientation?.lock?.('landscape');
+  } catch (error) {
+    console.warn('Full screen or orientation lock unavailable', error);
+  }
+}
+
+fullscreenButton.addEventListener('click', () => {
+  if (document.fullscreenElement) return document.exitFullscreen();
+  enterFullscreen();
+});
+document.addEventListener('fullscreenchange', () => {
+  fullscreenButton.textContent = document.fullscreenElement ? 'Exit full' : 'Full screen';
+});
+fullscreenButton.hidden = !document.documentElement.requestFullscreen;
 
 let game = newGame(MODE.learn);
 
