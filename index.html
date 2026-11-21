@@ -1128,7 +1128,8 @@ function renderHint(game) {
   cockpit.querySelectorAll('.hint').forEach(element => element.classList.remove('hint'));
   pedalTracks.forEach(track => track.classList.remove('hint'));
   if (game.mode !== MODE.learn || isFinished(game)) return;
-  primaryCandidates(game).forEach(index => hintElement(STEPS[index]).classList.add('hint'));
+  const isTooEarly = step => step.goal === 'stopAtLine' && !isStopLineClose(game);
+  primaryCandidates(game).filter(index => !isTooEarly(STEPS[index])).forEach(index => hintElement(STEPS[index]).classList.add('hint'));
 }
 
 function feedbackText(game, feedback) {
@@ -1181,8 +1182,27 @@ function learnPrompt(game) {
   return optional.length ? `${prompt}  (also possible now: ${optional.join(' · ')})` : prompt;
 }
 
+const STOP_HINT_DISTANCE_M = 60;
+
+function isStopStepActive(game) {
+  return candidateIndexes(game).some(index => STEPS[index].goal === 'stopAtLine');
+}
+
+function isStopLineClose(game) {
+  return game.crossedLine || (lineGap(game) ?? Infinity) <= STOP_HINT_DISTANCE_M;
+}
+
+function stopLinePrompt(game) {
+  if (!isStopStepActive(game)) return null;
+  if (game.crossedLine) return 'You passed the stop line: stop now.';
+  if (!isStopLineClose(game)) return `Stop line ahead in ${Math.round(lineGap(game))} m.`;
+  return 'Brake now and stop before the line (clutch down before you stall).';
+}
+
 function situationPrompt(game) {
   if (game.car.stalled) return 'Stalled: clutch fully down, then turn the key.';
+  const stopPrompt = stopLinePrompt(game);
+  if (stopPrompt) return stopPrompt;
   const gasStep = candidateIndexes(game).map(index => STEPS[index]).find(step => step.goal?.gas);
   if (gasStep && game.pedals.gas > gasStep.goal.gas[1]) return `Too much gas (${Math.round(game.pedals.gas)}%): ease off to ${gasStep.goal.gas[0]}–${gasStep.goal.gas[1]}%.`;
   const isRevvingWithClutchDown = isMoveOffAvailable(game) && game.pedals.clutch >= 90 && game.pedals.gas > 0;
@@ -1891,6 +1911,13 @@ function updateWorld(game, seconds, now) {
   renderTraffic(game);
   updatePitch(game, seconds);
   updateStrain(game, now);
+  refreshStopLinePrompt(game);
+}
+
+function refreshStopLinePrompt(game) {
+  if (!isStopStepActive(game) || isFinished(game)) return;
+  document.getElementById('status-prompt').textContent = statusFor(game, null).prompt;
+  renderHint(game);
 }
 
 const STRAIN = { minEngagement: 0.15, pulseMs: 450, vibration: [35, 25, 35], notice: 'The car shudders and strains: the handbrake is still on!' };
