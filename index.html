@@ -64,7 +64,9 @@
     #status-feedback { font-size:10px; min-height:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     #status-prompt { font-size:12px; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
     #zoomReset:not([hidden]) { display:block; grid-row:1; grid-column:1; justify-self:end; align-self:center; margin-right:4px; padding:4px 9px; font-size:11px; }
-    #cockpit { grid-row:2; grid-column:1; width:100%; height:100%; min-height:0; border-radius:6px; }
+    /* Stretched sideways a little (up to 1.35x) to use the wide screen; the SVG is set to non-uniform scaling here. */
+    #cockpit { grid-row:2; grid-column:1; justify-self:center; height:100%; min-height:0; border-radius:6px;
+      width:min(100%, calc((100dvh - 36px) * 1200 / 900 * 1.35)); }
     .pedal-help, #steps, .rotate-hint { display:none; }
   }
   .ctl { cursor:pointer; }
@@ -2073,6 +2075,7 @@ function setView(next) {
 }
 
 function applyPhoneView() {
+  cockpit.setAttribute('preserveAspectRatio', PHONE_LANDSCAPE.matches ? 'none' : 'xMidYMid meet');
   setView({ ...baseView() });
 }
 
@@ -2087,13 +2090,16 @@ let lastTapAt = 0;
 
 function meetGeometry(currentView) {
   const box = cockpit.getBoundingClientRect();
+  if (PHONE_LANDSCAPE.matches) {
+    return { box, scaleX: box.width / currentView.w, scaleY: box.height / currentView.h, offsetX: 0, offsetY: 0 };
+  }
   const scale = Math.min(box.width / currentView.w, box.height / currentView.h);
-  return { box, scale, offsetX: (box.width - currentView.w * scale) / 2, offsetY: (box.height - currentView.h * scale) / 2 };
+  return { box, scaleX: scale, scaleY: scale, offsetX: (box.width - currentView.w * scale) / 2, offsetY: (box.height - currentView.h * scale) / 2 };
 }
 
 function toSvgPoint(clientX, clientY, currentView) {
-  const { box, scale, offsetX, offsetY } = meetGeometry(currentView);
-  return { x: currentView.x + (clientX - box.left - offsetX) / scale, y: currentView.y + (clientY - box.top - offsetY) / scale };
+  const { box, scaleX, scaleY, offsetX, offsetY } = meetGeometry(currentView);
+  return { x: currentView.x + (clientX - box.left - offsetX) / scaleX, y: currentView.y + (clientY - box.top - offsetY) / scaleY };
 }
 
 function clampView(candidate) {
@@ -2124,9 +2130,9 @@ function updatePinch() {
   const current = touchMidpointAndDistance();
   const w = pinch.startView.w * pinch.startDistance / Math.max(current.distance, 1);
   const sized = clampView({ ...view, w });
-  const { box, scale, offsetX, offsetY } = meetGeometry(sized);
-  const x = pinch.anchor.x - (current.x - box.left - offsetX) / scale;
-  const y = pinch.anchor.y - (current.y - box.top - offsetY) / scale;
+  const { box, scaleX, scaleY, offsetX, offsetY } = meetGeometry(sized);
+  const x = pinch.anchor.x - (current.x - box.left - offsetX) / scaleX;
+  const y = pinch.anchor.y - (current.y - box.top - offsetY) / scaleY;
   setView(clampView({ x, y, w: sized.w, h: sized.h }));
 }
 
