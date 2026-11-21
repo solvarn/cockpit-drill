@@ -1208,6 +1208,7 @@ function stepItem(game, step, index) {
 }
 
 function renderSteps(game) {
+  stepsList.hidden = game.mode === MODE.exam;
   stepsList.replaceChildren(...STEPS.map((step, index) => stepItem(game, step, index)));
 }
 
