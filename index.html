@@ -2156,8 +2156,10 @@ gearControl.addEventListener('pointerdown', event => {
   capturePointer(gearControl, event.pointerId);
 });
 
-gearControl.addEventListener('pointermove', event => {
-  if (!leverDrag || event.buttons === 0) return;
+// Listen on the window: the finger often leaves the small knob while dragging, and the release must always end the drag.
+window.addEventListener('pointermove', event => {
+  if (!leverDrag) return;
+  if (event.buttons === 0) return finishLeverDrag();
   const pixelsX = event.clientX - leverDrag.startX;
   const pixelsY = event.clientY - leverDrag.startY;
   leverDrag.movedPx = Math.max(leverDrag.movedPx, Math.hypot(pixelsX, pixelsY));
@@ -2166,7 +2168,7 @@ gearControl.addEventListener('pointermove', event => {
   applyLeverPose(leverPose);
 });
 
-['pointerup', 'pointercancel'].forEach(type => gearControl.addEventListener(type, () => {
+['pointerup', 'pointercancel', 'blur'].forEach(type => window.addEventListener(type, () => {
   if (leverDrag) finishLeverDrag();
 }));
 
