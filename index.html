@@ -1886,10 +1886,15 @@ function buildRain() {
   document.getElementById('rain').innerHTML = drops.join('');
 }
 
-document.getElementById('conditions').addEventListener('change', event => {
-  conditions = event.target.value;
+function applyConditions(value) {
+  conditions = value;
   ['night', 'rain'].forEach(name => cockpit.classList.toggle(name, conditions === name));
-});
+}
+
+const conditionsSelect = document.getElementById('conditions');
+conditionsSelect.addEventListener('change', event => applyConditions(event.target.value));
+// Browsers restore a select's value on reload; keep the scene in sync with what the menu shows.
+applyConditions(conditionsSelect.value);
 
 buildRain();
 
