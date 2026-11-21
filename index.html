@@ -2220,6 +2220,7 @@ document.querySelectorAll('[data-mode]').forEach(button => {
     document.querySelectorAll('[data-mode]').forEach(other => other.classList.toggle('active', other === button));
     resetWorld();
     game = newGame(button.dataset.mode);
+    applyLabelVisibility();
     render(game, null);
   });
 });
@@ -2230,9 +2231,20 @@ document.getElementById('restart').addEventListener('click', () => {
   render(game, null);
 });
 
-document.getElementById('toggle-labels').addEventListener('click', event => {
-  const isOn = cockpit.classList.toggle('labels');
-  event.currentTarget.classList.toggle('active', isOn);
+// Labels are a Learn-mode aid: Exam hides them (and the button); the Learn preference is kept.
+const labelsButton = document.getElementById('toggle-labels');
+let labelsWanted = true;
+
+function applyLabelVisibility() {
+  const isExam = game.mode === MODE.exam;
+  cockpit.classList.toggle('labels', labelsWanted && !isExam);
+  labelsButton.classList.toggle('active', labelsWanted);
+  labelsButton.hidden = isExam;
+}
+
+labelsButton.addEventListener('click', () => {
+  labelsWanted = !labelsWanted;
+  applyLabelVisibility();
 });
 
 DIALS.forEach(drawDial);
