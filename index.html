@@ -882,13 +882,17 @@ function freeRevs(game) {
   return game.car.engine ? IDLE_RPM + game.pedals.gas * GAS_RPM_PER_PERCENT : 0;
 }
 
+function enginePull(game, gear) {
+  const driveTarget = freeRevs(game) / RPM_PER_KMH[gear];
+  const rawPull = (driveTarget - game.speed) * GEAR_RESPONSE_PER_S[gear];
+  return Math.min(MAX_ENGINE_ACCEL_KMH_PER_S[gear], Math.max(-MAX_ENGINE_BRAKING_KMH_PER_S, rawPull));
+}
+
 function nextSpeed(game, seconds) {
   const engagement = clutchEngagement(game);
   const gear = game.car.gear;
-  const driveTarget = engagement > 0 ? freeRevs(game) / RPM_PER_KMH[gear] : game.speed;
-  const rawPull = (driveTarget - game.speed) * GEAR_RESPONSE_PER_S[gear];
-  const cappedPull = Math.min(MAX_ENGINE_ACCEL_KMH_PER_S[gear] ?? 0, Math.max(-MAX_ENGINE_BRAKING_KMH_PER_S, rawPull));
-  const pull = engagement * cappedPull * seconds;
+  // In neutral (or with the clutch fully down) the engine does not drive the wheels at all.
+  const pull = engagement > 0 ? engagement * enginePull(game, gear) * seconds : 0;
   const coast = (1 - engagement) * (COAST_DECEL_KMH_PER_S + COAST_DRAG_PER_S * game.speed) * seconds;
   const braking = game.pedals.brake * BRAKE_DECEL_KMH_PER_S_PER_PERCENT * seconds;
   return Math.max(0, game.speed + pull - coast - braking);
