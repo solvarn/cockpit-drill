@@ -1,0 +1,1786 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cockpit Drill</title>
+<style>
+  :root { --bg:#14161a; --panel:#1f232a; --text:#e8eaed; --muted:#9aa0a6; --accent:#ffd54a; --good:#4caf50; --bad:#ef5350; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 system-ui, sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 16px; background:var(--panel); }
+  header h1 { font-size:18px; margin:0 auto 0 0; }
+  header h1 small { font-weight:400; color:var(--muted); font-size:13px; }
+  button { background:#2d333b; color:var(--text); border:1px solid #444c56; border-radius:6px; padding:6px 12px; cursor:pointer; font:inherit; }
+  button.active { background:var(--accent); color:#111; border-color:var(--accent); }
+  main { max-width:1200px; margin:0 auto; padding:12px 16px; }
+  #status { min-height:70px; padding:10px 14px; border-radius:8px; background:var(--panel); margin-bottom:10px; }
+  #status.wrong { box-shadow:inset 5px 0 var(--bad); }
+  #status.right { box-shadow:inset 5px 0 var(--good); }
+  #status-step { color:var(--muted); font-size:13px; }
+  #status-feedback { font-size:14px; min-height:20px; }
+  #status-prompt { font-size:20px; font-weight:600; }
+  #cockpit-wrap { position:relative; }
+  #gear { touch-action:none; cursor:grab; }
+  svg.lever-dragging #gear { cursor:grabbing; }
+  #gateGuide { display:none; pointer-events:none; }
+  svg.lever-dragging #gateGuide { display:inline; }
+  .gate-label { font-size:16px; font-weight:700; fill:#ffd54a; text-anchor:middle; dominant-baseline:middle; }
+  .pedal-help { color:var(--muted); text-align:center; font-size:13px; }
+  #steps { columns:2 320px; padding-left:28px; color:var(--muted); }
+  #steps li.done { color:var(--text); }
+  #steps li.done::marker { color:var(--good); }
+  #steps li.current { color:var(--accent); font-weight:600; }
+
+  svg { width:100%; height:auto; display:block; border-radius:10px; user-select:none; }
+  .ctl { cursor:pointer; }
+  .ctl:hover { filter:brightness(1.4); }
+  .hint { animation:pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { filter:drop-shadow(0 0 12px var(--accent)) brightness(1.6); } }
+  .ok { filter:drop-shadow(0 0 12px var(--good)) brightness(1.5) !important; }
+  .wrong { filter:drop-shadow(0 0 12px var(--bad)) brightness(1.5) !important; }
+  .label { font-size:13px; fill:#e8eaed; pointer-events:none; text-anchor:middle; paint-order:stroke; stroke:#000; stroke-width:3px; }
+  svg:not(.labels) .label { display:none; }
+  .dial-text { font-size:8px; fill:#d8dce2; text-anchor:middle; dominant-baseline:middle; }
+  .knob-text { font-size:9px; fill:#e8eaed; text-anchor:middle; pointer-events:none; }
+  .mfd-text { font-size:7px; fill:#e8eaed; text-anchor:middle; font-family:monospace; }
+
+  #scene { transform-box:view-box; transform-origin:600px 450px; transition:transform .8s; transform:scale(.95) rotate(-1.5deg); }
+  svg.seat #scene { transform:none; }
+
+  .mirror .view-good { display:none; }
+  svg.mirrorInterior #mirrorInterior .view-good,
+  svg.mirrorLeft #mirrorLeft .view-good,
+  svg.mirrorRight #mirrorRight .view-good { display:inline; }
+  svg.mirrorInterior #mirrorInterior .view-bad,
+  svg.mirrorLeft #mirrorLeft .view-bad,
+  svg.mirrorRight #mirrorRight .view-bad { display:none; }
+
+  svg.belt #beltLabel,
+  svg.belt #belt { display:none; }
+
+  .beam { opacity:0; transition:opacity .4s; pointer-events:none; }
+  .knob-pointer { transform-box:view-box; transform-origin:190px 500px; transform:rotate(-45deg); transition:transform .3s; }
+  svg.lights .knob-pointer { transform:rotate(0deg); }
+
+  .key { display:none; transform-box:view-box; transform-origin:470px 615px; }
+  svg.keyIn .key { display:inline; }
+  svg.ignitionOn .key { display:inline; transform:rotate(45deg); }
+  svg.engine .key { transform:rotate(60deg); }
+
+  .dial-face { fill:#0b0c0e; stroke:#3a3d43; stroke-width:2; transition:stroke .4s; }
+  svg.ignitionOn .dial-face { stroke:#b9bec5; }
+  .mfd { fill:#050608; stroke:#2d3035; }
+  svg.ignitionOn .mfd { fill:#0f1a2a; }
+  .needle { transform-box:view-box; transition:transform .8s; }
+  #tachNeedle { transform-origin:322px 398px; }
+  #speedNeedle { transform-origin:458px 398px; }
+  .lamp { opacity:0; }
+  svg.ignitionOn:not(.engine) .warn { opacity:1; }
+  svg.ignitionOn.handbrake .lamp-p { opacity:1; }
+  svg.ignitionOn.indicator .lamp-left { animation:blink .8s steps(1) infinite; }
+  svg.hazard .lamp-left, svg.hazard .lamp-right { animation:blink .8s steps(1) infinite; }
+  svg.hazard #hazard polygon { fill:#e53935; }
+  .glove-lid { transform-box:fill-box; transform-origin:center bottom; transition:transform .4s; }
+  svg.glovebox .glove-lid { transform:scaleY(.3); }
+  .equalizer { display:none; }
+  svg.radio .equalizer { display:inline; }
+  .equalizer rect { transform-box:fill-box; transform-origin:center bottom; animation:eq .5s ease-in-out infinite alternate; }
+  .equalizer rect:nth-child(2n) { animation-duration:.35s; }
+  .equalizer rect:nth-child(3n) { animation-duration:.6s; }
+  @keyframes eq { from { transform:scaleY(.2); } to { transform:scaleY(1); } }
+  .wiper { transform-box:view-box; }
+  svg.wiping .wiper { animation:wipe 1.4s ease-in-out; }
+  @keyframes wipe { 50% { transform:rotate(80deg); } }
+  @keyframes blink { 0% { opacity:1; } 50% { opacity:0; } }
+
+  .stalk-indicator { transform-box:view-box; transform-origin:365px 518px; transition:transform .25s; }
+  svg.indicator .stalk-indicator { transform:rotate(-10deg); }
+
+  .hb-lever { transform-box:view-box; transform-origin:737px 760px; transform:scaleY(.3); transition:transform .3s; }
+  svg.handbrake .hb-lever { transform:none; }
+
+  .pedal-track { cursor:ns-resize; touch-action:none; }
+  .pedal-move { transform-box:view-box; transform-origin:50px 200px; }
+  .pedal-name { font-size:15px; fill:#e8eaed; text-anchor:middle; pointer-events:none; font-weight:600; }
+  .hazard-sprite { display:none; }
+  svg.crash-car #hazardCar, svg.crash-cyclist #hazardCyclist, svg.crash-pedestrian #hazardPedestrian { display:inline; animation:hazard-in .9s ease-out forwards; }
+  @keyframes hazard-in { from { transform:translateX(-420px); } to { transform:translateX(0); } }
+  .crash-overlay { opacity:0; pointer-events:none; }
+  svg.crashed .crash-overlay { animation:crash-flash 1.6s ease-out .8s forwards; }
+  @keyframes crash-flash { 0% { opacity:0; } 10% { opacity:1; } 100% { opacity:.85; } }
+  svg.crashed .road-dash { animation:none; }
+
+  #tachJitter { transform-box:view-box; transform-origin:322px 398px; }
+  svg.engine #tachJitter { animation:idle-jitter .45s ease-in-out infinite alternate; }
+  @keyframes idle-jitter { from { transform:rotate(-1.5deg); } to { transform:rotate(1.5deg); } }
+  #cabin { transform-box:view-box; }
+  svg.engine #cabin { animation:engine-shake .09s linear infinite; }
+  svg.engine.moving #cabin { animation-duration:.07s; }
+  @keyframes engine-shake { 0% { transform:translate(0, 0); } 25% { transform:translate(.6px, -.5px); } 50% { transform:translate(-.5px, .6px); } 75% { transform:translate(.5px, .5px); } }
+  @media (prefers-reduced-motion: reduce) { svg.engine #cabin, svg.engine #tachJitter { animation:none; } }
+  #road { transform-box:view-box; transform-origin:600px 180px; transition:transform 3s ease-in-out; }
+  svg.moving #road { transform:skewX(55deg); }
+  svg.moving.crashed #road { transform:skewX(8deg); }
+  .climate-value { font-size:9px; fill:#9aa0a6; text-anchor:middle; pointer-events:none; }
+  .climate-mark { transform-box:view-box; transition:transform .25s; }
+  svg.ac-on .ac-led { fill:#4fc3f7; }
+  #airflow path { fill:none; stroke:var(--air-color, #e8eaed); stroke-width:3; stroke-linecap:round; stroke-dasharray:6 10; opacity:0; }
+  svg.fan-on #airflow path { opacity:.45; animation:airflow var(--air-speed, 1s) linear infinite; }
+  @keyframes airflow { to { stroke-dashoffset:-32; } }
+  .road-dash { stroke-dasharray:16 16; }
+  svg.moving .road-dash { animation:roll .35s linear infinite; }
+  @keyframes roll { to { stroke-dashoffset:-32; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cockpit Drill <small>Octavia III, manual</small></h1>
+  <button data-mode="learn" class="active">Learn</button>
+  <button data-mode="exam">Exam</button>
+  <button id="toggle-labels" class="active">Labels</button>
+  <button id="toggle-sound" class="active">Sound</button>
+  <button id="restart">Restart</button>
+</header>
+<main>
+  <div id="drill-view">
+  <div id="status">
+    <div id="status-step"></div>
+    <div id="status-feedback"></div>
+    <div id="status-prompt"></div>
+  </div>
+
+  <div id="cockpit-wrap">
+  <svg id="cockpit" class="labels" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <clipPath id="sceneClip"><rect x="0" y="0" width="1200" height="900"/></clipPath>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6fa8dc"/><stop offset="1" stop-color="#cfe2f3"/>
+      </linearGradient>
+      <linearGradient id="sideWin" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="460">
+        <stop offset="0" stop-color="#8db6dd"/><stop offset=".39" stop-color="#cfe2f3"/>
+        <stop offset=".4" stop-color="#5b7f3a"/><stop offset="1" stop-color="#4a6a2f"/>
+      </linearGradient>
+      <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#eef0f3"/><stop offset=".5" stop-color="#9aa0a8"/><stop offset="1" stop-color="#d5d9de"/>
+      </linearGradient>
+      <linearGradient id="bootLeather" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#141517"/><stop offset=".45" stop-color="#34363b"/><stop offset="1" stop-color="#141517"/>
+      </linearGradient>
+      <linearGradient id="dashTop" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#26282c"/><stop offset="1" stop-color="#1b1d20"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="1200" height="900" fill="#24262a"/>
+    <g id="scene"><g id="cabin" clip-path="url(#sceneClip)">
+      <!-- outside -->
+      <rect x="0" y="0" width="1200" height="190" fill="url(#sky)"/>
+      <rect x="0" y="180" width="1200" height="180" fill="#5b7f3a"/>
+      <circle cx="260" cy="172" r="16" fill="#3d6b2a"/><circle cx="290" cy="176" r="11" fill="#3d6b2a"/>
+      <circle cx="880" cy="172" r="18" fill="#3d6b2a"/><circle cx="915" cy="177" r="10" fill="#3d6b2a"/>
+      <g id="road">
+        <polygon points="560,180 612,180 870,360 -1400,360" fill="#5a5d62"/>
+        <polygon points="612,180 634,180 1300,360 884,360" fill="#a3a5a8"/>
+        <path d="M612 180 L876 360" stroke="#d9d9d9" stroke-width="8"/>
+        <path class="road-dash" d="M596 180 L-60 360" stroke="#eee" stroke-width="5"/>
+        <polygon class="beam" points="560,215 650,215 850,360 150,360" fill="#fff7c2"/>
+      </g>
+
+      <!-- what you hit if you skip the checks -->
+      <g class="hazard-sprite" id="hazardCar">
+        <rect x="250" y="236" width="230" height="78" rx="18" fill="#c62828"/>
+        <rect x="285" y="214" width="150" height="38" rx="12" fill="#b71c1c"/>
+        <rect x="298" y="220" width="56" height="26" rx="5" fill="#90caf9"/><rect x="362" y="220" width="60" height="26" rx="5" fill="#90caf9"/>
+        <circle cx="300" cy="316" r="22" fill="#111"/><circle cx="430" cy="316" r="22" fill="#111"/>
+        <circle cx="476" cy="268" r="9" fill="#fff59d"/>
+      </g>
+      <g class="hazard-sprite" id="hazardCyclist" stroke="#212121" stroke-width="6" fill="none" stroke-linecap="round">
+        <circle cx="300" cy="300" r="34"/><circle cx="420" cy="300" r="34"/>
+        <path d="M300 300 L345 250 L405 250 L420 300 M345 250 L360 300 L300 300 M405 250 L398 232"/>
+        <path d="M352 244 L372 190 L398 232 M372 190 L392 210" stroke="#1565c0" stroke-width="10"/>
+        <circle cx="372" cy="172" r="15" fill="#ffcc80" stroke="#212121" stroke-width="3"/>
+        <path d="M356 166 Q372 146 390 166" stroke="#e53935" stroke-width="8"/>
+      </g>
+      <g class="hazard-sprite" id="hazardPedestrian" stroke-linecap="round">
+        <circle cx="360" cy="168" r="17" fill="#ffcc80"/>
+        <path d="M360 186 L360 260" stroke="#6a1b9a" stroke-width="22"/>
+        <path d="M360 200 L332 238 M360 200 L390 232" stroke="#6a1b9a" stroke-width="9"/>
+        <path d="M360 258 L340 318 M360 258 L384 316" stroke="#37474f" stroke-width="11"/>
+      </g>
+      <!-- roof, A-pillars, side windows -->
+      <rect x="0" y="0" width="1200" height="32" fill="#2b2d31"/>
+
+      <!-- mirrors -->
+      <rect x="590" y="0" width="20" height="38" rx="6" fill="#1b1d20"/>
+      <g class="ctl mirror" id="mirrorInterior" data-control="mirrorInterior">
+        <rect x="505" y="32" width="190" height="54" rx="20" fill="#121315"/>
+        <g class="view-bad"><rect x="511" y="38" width="178" height="42" rx="16" fill="#4a4f57"/><rect x="511" y="38" width="178" height="14" rx="7" fill="#5c626b"/></g>
+        <g class="view-good"><rect x="511" y="38" width="178" height="42" rx="16" fill="#3a3f47"/><rect x="532" y="44" width="136" height="18" fill="#9cc3e6"/><rect x="532" y="60" width="136" height="14" fill="#5b7f3a"/><polygon points="592,60 608,60 640,74 560,74" fill="#5a5d62"/></g>
+      </g>
+
+      <!-- wipers rest below the dash line and rise when used -->
+      <g class="wiper" style="transform-origin:470px 356px"><path d="M470 356 L240 346" stroke="#0c0d0f" stroke-width="5" stroke-linecap="round"/></g>
+      <g class="wiper" style="transform-origin:800px 356px"><path d="M800 356 L570 346" stroke="#0c0d0f" stroke-width="5" stroke-linecap="round"/></g>
+      <!-- dashboard: upper pad, vent band with chrome trim, lower dash -->
+      <path d="M0 360 Q600 310 1200 360 L1200 445 L0 445 Z" fill="url(#dashTop)"/>
+      <rect x="0" y="440" width="1200" height="460" fill="#2b2d31"/>
+      <path d="M0 445 H1200" stroke="#3b3e44" stroke-width="2"/>
+      <rect x="140" y="400" width="96" height="32" rx="6" fill="#0f1012"/>
+      <rect x="962" y="400" width="96" height="32" rx="6" fill="#0f1012"/>
+      <rect x="640" y="392" width="300" height="40" rx="6" fill="#0f1012"/>
+      <path d="M652 402 H760 M652 412 H760 M652 422 H760 M820 402 H928 M820 412 H928 M820 422 H928 M148 410 H228 M148 422 H228 M970 410 H1050 M970 422 H1050" stroke="#26282c" stroke-width="3"/>
+      <path d="M630 388 L642 436 H938 L950 388" fill="none" stroke="url(#chrome)" stroke-width="3"/>
+      <rect x="765" y="394" width="50" height="36" rx="4" fill="#1d1f22"/>
+      <rect x="771" y="400" width="8" height="18" rx="3" fill="#3a3d43"/><rect x="801" y="400" width="8" height="18" rx="3" fill="#3a3d43"/>
+      <g class="ctl" id="hazard" data-control="hazard">
+        <rect x="781" y="410" width="18" height="16" rx="3" fill="#2d2f33"/>
+        <polygon points="790,413 796,423 784,423" fill="none" stroke="#e53935" stroke-width="2"/>
+      </g>
+
+      <!-- centre stack: screen, climate, gear, handbrake -->
+      <rect x="700" y="450" width="180" height="112" rx="10" fill="#0c0d0f" stroke="#3b3e44" stroke-width="2"/>
+      <g class="ctl" id="radio" data-control="radio">
+        <rect x="722" y="458" width="136" height="88" rx="4" fill="#111a24"/>
+        <text id="screenText" x="790" y="500" font-size="14" fill="#7f8a99" text-anchor="middle">12:00</text>
+        <g class="equalizer"><rect x="766" y="512" width="6" height="18" fill="#4fc3f7"/><rect x="776" y="512" width="6" height="18" fill="#4fc3f7"/><rect x="786" y="512" width="6" height="18" fill="#4fc3f7"/><rect x="796" y="512" width="6" height="18" fill="#4fc3f7"/><rect x="806" y="512" width="6" height="18" fill="#4fc3f7"/></g>
+      </g>
+      <circle cx="711" cy="550" r="6" fill="url(#chrome)"/><circle cx="869" cy="550" r="6" fill="url(#chrome)"/>
+      <rect x="712" y="570" width="156" height="58" rx="8" fill="#1b1d20"/>
+      <g class="ctl" id="climateTemp" data-control="climateTemp">
+        <circle cx="745" cy="591" r="15" fill="#151618" stroke="url(#chrome)" stroke-width="3"/>
+        <line class="climate-mark" x1="745" y1="591" x2="745" y2="580" stroke="#e8eaed" stroke-width="3" stroke-linecap="round" style="transform-origin:745px 591px"/>
+        <text class="climate-value" id="climateTempValue" x="745" y="621">22°</text>
+      </g>
+      <g class="ctl" id="climateFan" data-control="climateFan">
+        <circle cx="790" cy="591" r="15" fill="#151618" stroke="url(#chrome)" stroke-width="3"/>
+        <line class="climate-mark" x1="790" y1="591" x2="790" y2="580" stroke="#e8eaed" stroke-width="3" stroke-linecap="round" style="transform-origin:790px 591px"/>
+        <text class="climate-value" id="climateFanValue" x="790" y="621">fan 0</text>
+      </g>
+      <g class="ctl" id="climateAc" data-control="climateAc">
+        <circle cx="835" cy="591" r="15" fill="#151618" stroke="url(#chrome)" stroke-width="3"/>
+        <text x="835" y="595" font-size="10" font-weight="700" fill="#cfd3d8" text-anchor="middle" pointer-events="none">A/C</text>
+        <rect class="ac-led" x="828" y="611" width="14" height="4" rx="2" fill="#2a2c30"/>
+      </g>
+      <g id="airflow" pointer-events="none">
+        <path d="M672 432 q-8 22 4 44 M712 432 q-6 26 6 50 M868 432 q6 26 -6 50 M908 432 q8 22 -4 44"/>
+      </g>
+      <rect x="700" y="625" width="180" height="275" rx="12" fill="#1f2124"/>
+      <rect x="720" y="635" width="140" height="265" rx="8" fill="#c9ccd1" opacity=".18"/>
+      <g class="ctl" id="gear" data-control="gear">
+        <rect x="754" y="690" width="76" height="66" rx="10" fill="#0e0f11" stroke="url(#chrome)" stroke-width="3"/>
+        <path id="gearBoot" fill="url(#bootLeather)" stroke="#0c0d0f" stroke-width="1.5"/>
+        <path id="gearBootFolds" fill="none" stroke="#111214" stroke-width="2" stroke-linecap="round"/>
+        <g id="gearKnob">
+          <rect x="776" y="673" width="28" height="8" rx="3" fill="url(#chrome)"/>
+          <rect x="762" y="620" width="56" height="55" rx="18" fill="#1f2124" stroke="url(#chrome)" stroke-width="3"/>
+          <text class="knob-text" x="770" y="635">R</text><text class="knob-text" x="783" y="635">1</text>
+          <text class="knob-text" x="796" y="635">3</text><text class="knob-text" x="809" y="635">5</text>
+          <path d="M770 639 V651 M783 639 V663 M796 639 V663 M809 639 V663 M770 651 H809" stroke="#e8eaed" stroke-width="1.4"/>
+          <text class="knob-text" x="783" y="672">2</text><text class="knob-text" x="796" y="672">4</text><text class="knob-text" x="809" y="672">6</text>
+        </g>
+      </g>
+      <g id="gateGuide">
+        <path d="M660 647 H860 M660 647 V587 M720 587 V707 M790 587 V707 M860 587 V707" stroke="#ffd54a" stroke-width="3" stroke-dasharray="6 6" fill="none" opacity=".7"/>
+        <text class="gate-label" x="660" y="572">R</text><text class="gate-label" x="720" y="572">1</text><text class="gate-label" x="790" y="572">3</text><text class="gate-label" x="860" y="572">5</text>
+        <text class="gate-label" x="720" y="724">2</text><text class="gate-label" x="790" y="724">4</text><text class="gate-label" x="860" y="724">6</text>
+        <text class="gate-label" x="884" y="647">N</text>
+      </g>
+      <g class="ctl" id="handbrake" data-control="handbrake">
+        <rect x="718" y="738" width="38" height="22" rx="6" fill="#0d0e10"/>
+        <g class="hb-lever"><rect x="721" y="666" width="32" height="94" rx="14" fill="#3a3d43" stroke="#5c626b" stroke-width="2"/><circle cx="737" cy="682" r="7" fill="url(#chrome)"/></g>
+      </g>
+
+      <!-- glovebox -->
+      <g class="ctl" id="glovebox" data-control="glovebox">
+        <rect x="945" y="455" width="120" height="115" rx="16" fill="#0d0e10"/>
+        <rect x="958" y="466" width="48" height="36" rx="3" fill="#2e5d9e"/>
+        <text x="982" y="488" font-size="9" fill="#fff" text-anchor="middle">Manual</text>
+        <rect x="1014" y="482" width="16" height="11" rx="5" fill="#111" stroke="#9aa0a8"/><rect x="1032" y="482" width="16" height="11" rx="5" fill="#111" stroke="#9aa0a8"/>
+        <g class="glove-lid"><rect x="945" y="455" width="120" height="115" rx="16" fill="#303237"/><rect x="975" y="495" width="60" height="16" rx="8" fill="#1d1f22"/></g>
+      </g>
+
+      <!-- side windows (set lower, beside you) and doors -->
+      <g class="ctl" id="shoulder" data-control="shoulder">
+        <polygon points="0,0 132,0 110,396 0,470" fill="url(#sideWin)"/>
+      </g>
+      <polygon points="1200,0 1068,0 1090,396 1200,470" fill="url(#sideWin)"/>
+      <path d="M0 0 H215 L205 28 Q110 44 0 70 Z M1200 0 H985 L995 28 Q1090 44 1200 70 Z" fill="#2b2d31"/>
+      <polygon points="128,0 218,0 154,362 106,398" fill="#2b2d31"/>
+      <polygon points="1072,0 982,0 1046,362 1094,398" fill="#2b2d31"/>
+      <path d="M218 0 L154 362 M982 0 L1046 362" stroke="#202226" stroke-width="3"/>
+      <polygon points="106,398 0,470 0,900 112,900 135,470" fill="#303237"/>
+      <polygon points="1094,398 1200,470 1200,900 1088,900 1065,470" fill="#303237"/>
+      <path d="M106 398 L0 470 M1094 398 L1200 470" stroke="#151618" stroke-width="7"/>
+      <path d="M8 520 Q60 500 118 488 M1192 520 Q1140 500 1082 488" stroke="#1d1f22" stroke-width="10" stroke-linecap="round" fill="none"/>
+      <rect x="70" y="470" width="34" height="10" rx="5" fill="url(#chrome)" transform="rotate(-14 87 475)"/>
+      <rect x="1096" y="470" width="34" height="10" rx="5" fill="url(#chrome)" transform="rotate(14 1113 475)"/>
+      <g class="ctl mirror" id="mirrorLeft" data-control="mirrorLeft" transform="translate(8 92)">
+        <path d="M16 252 Q16 232 40 232 H108 V294 H34 Q16 294 16 276 Z" fill="#1b1d20"/>
+        <g class="view-bad"><rect x="23" y="239" width="78" height="48" rx="10" fill="#4a4f57"/><polygon points="23,287 101,250 101,287" fill="#2e3238"/></g>
+        <g class="view-good"><rect x="23" y="239" width="78" height="24" rx="9" fill="#9cc3e6"/><rect x="23" y="261" width="78" height="26" fill="#5b7f3a"/><polygon points="52,261 60,261 85,287 28,287" fill="#5a5d62"/><rect x="85" y="239" width="16" height="48" fill="#3a3f47"/></g>
+      </g>
+      <g class="ctl mirror" id="mirrorRight" data-control="mirrorRight" transform="translate(-8 92)">
+        <path d="M1184 252 Q1184 232 1160 232 H1092 V294 H1166 Q1184 294 1184 276 Z" fill="#1b1d20"/>
+        <g class="view-bad"><rect x="1099" y="239" width="78" height="48" rx="10" fill="#4a4f57"/><polygon points="1099,250 1177,287 1099,287" fill="#2e3238"/></g>
+        <g class="view-good"><rect x="1099" y="239" width="78" height="24" rx="9" fill="#9cc3e6"/><rect x="1099" y="261" width="78" height="26" fill="#5b7f3a"/><polygon points="1140,261 1148,261 1172,287 1115,287" fill="#5a5d62"/><rect x="1099" y="239" width="16" height="48" fill="#3a3f47"/></g>
+      </g>
+
+      <!-- instrument cluster -->
+      <path d="M248 452 Q246 350 300 344 H480 Q534 350 532 452 Z" fill="#0d0e10"/>
+      <circle class="dial-face" cx="322" cy="398" r="42"/>
+      <circle class="dial-face" cx="458" cy="398" r="42"/>
+      <g id="tachTicks"></g>
+      <g id="speedTicks"></g>
+      <text class="dial-text" x="322" y="414" font-size="6">1/min×1000</text>
+      <text class="dial-text" x="458" y="414" font-size="6">km/h</text>
+      <g id="tachJitter"><line id="tachNeedle" class="needle" x1="322" y1="398" x2="322" y2="364" stroke="#ff5722" stroke-width="2.5" stroke-linecap="round"/></g>
+      <line id="speedNeedle" class="needle" x1="458" y1="398" x2="458" y2="364" stroke="#ff5722" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="322" cy="398" r="4" fill="#2a2c30"/><circle cx="458" cy="398" r="4" fill="#2a2c30"/>
+      <rect class="mfd" x="368" y="368" width="44" height="58" rx="3"/>
+      <text id="mfdTop" class="mfd-text" x="390" y="388"></text>
+      <text id="mfdBottom" class="mfd-text" x="390" y="404"></text>
+      <rect class="lamp warn" x="300" y="426" width="10" height="7" rx="1" fill="#e53935"/>
+      <circle class="lamp warn" cx="334" cy="430" r="4" fill="#e53935"/>
+      <rect class="lamp warn" x="444" y="426" width="10" height="7" rx="1" fill="#ffb300"/>
+      <g class="lamp lamp-p"><circle cx="472" cy="430" r="5.5" fill="none" stroke="#e53935" stroke-width="1.5"/><text x="472" y="433" font-size="7" fill="#e53935" text-anchor="middle">P</text></g>
+      <path class="lamp lamp-lights" d="M386 438 h5 a4 4 0 0 1 0 8 h-5 z" fill="#43a047"/>
+      <polygon class="lamp lamp-left" points="360,356 370,350 370,362" fill="#43a047"/>
+      <polygon class="lamp lamp-right" points="420,356 410,350 410,362" fill="#43a047"/>
+
+      <!-- light switch (rotary, left of the wheel) -->
+      <g class="ctl" id="lights" data-control="lights">
+        <circle cx="190" cy="500" r="30" fill="#1b1d20" stroke="#3b3e44" stroke-width="2"/>
+        <circle cx="190" cy="500" r="22" fill="#121315" stroke="url(#chrome)" stroke-width="2.5"/>
+        <rect class="knob-pointer" x="187" y="480" width="6" height="18" rx="3" fill="#e8eaed"/>
+        <text class="knob-text" x="160" y="478">0</text>
+        <text class="knob-text" x="190" y="466">A</text>
+        <text class="knob-text" x="222" y="482">≣D</text>
+      </g>
+
+      <!-- steering column, stalks, wheel -->
+      <rect x="370" y="560" width="40" height="200" fill="#141517"/>
+      <g class="ctl" id="indicator" data-control="indicator">
+        <g class="stalk-indicator"><rect x="228" y="512" width="137" height="12" rx="6" fill="#1a1b1e"/><circle cx="232" cy="518" r="9" fill="#1a1b1e"/></g>
+      </g>
+      <g class="ctl" id="wipers" data-control="wipers">
+        <rect x="415" y="512" width="137" height="12" rx="6" fill="#1a1b1e"/><circle cx="548" cy="518" r="9" fill="#1a1b1e"/>
+      </g>
+      <circle cx="390" cy="560" r="125" fill="none" stroke="#141517" stroke-width="24"/>
+      <circle cx="390" cy="560" r="113" fill="none" stroke="#202226" stroke-width="2"/>
+      <path d="M268 550 L340 540 L345 592 L272 582 Z" fill="#141517"/>
+      <path d="M512 550 L440 540 L435 592 L508 582 Z" fill="#141517"/>
+      <path d="M272 548 L340 539 M508 548 L440 539" stroke="url(#chrome)" stroke-width="2"/>
+      <circle cx="300" cy="560" r="5" fill="#2c2e33"/><circle cx="318" cy="566" r="5" fill="#2c2e33"/>
+      <circle cx="480" cy="560" r="5" fill="#2c2e33"/><circle cx="462" cy="566" r="5" fill="#2c2e33"/>
+      <path d="M362 596 L374 680 H406 L418 596 Z" fill="#141517"/>
+      <path d="M372 604 L380 668 H400 L408 604" fill="none" stroke="url(#chrome)" stroke-width="2"/>
+      <g class="ctl" id="horn" data-control="horn">
+        <ellipse cx="390" cy="562" rx="58" ry="50" fill="#18191c"/>
+        <circle cx="390" cy="556" r="15" fill="#0e0f11" stroke="url(#chrome)" stroke-width="2.5"/>
+      </g>
+
+      <!-- ignition lock on the column, right side -->
+      <g class="ctl" id="ignition" data-control="ignition">
+        <circle cx="470" cy="615" r="15" fill="#121315" stroke="url(#chrome)" stroke-width="3"/>
+        <rect x="467" y="606" width="6" height="18" rx="2" fill="#050506"/>
+        <g class="key">
+          <rect x="466" y="590" width="8" height="28" rx="2" fill="#c9ccd1"/>
+          <rect x="456" y="572" width="28" height="22" rx="9" fill="#1f2124" stroke="#c9ccd1" stroke-width="2"/>
+        </g>
+      </g>
+
+      <!-- footwell and pedals -->
+      <rect x="165" y="692" width="525" height="208" rx="14" fill="#141518"/>
+      <g id="pedalColumns"></g>
+
+      <!-- seatbelt (hanging) and seat -->
+      <g class="ctl" id="belt" data-control="belt">
+        <rect x="8" y="450" width="22" height="150" fill="#1f2124"/>
+        <rect x="4" y="598" width="30" height="34" rx="4" fill="url(#chrome)"/>
+      </g>
+      <path d="M0 650 Q70 628 150 655 L165 900 H0 Z" fill="#1c1d20"/>
+      <g class="ctl" id="seat" data-control="seat">
+        <rect x="20" y="726" width="130" height="16" rx="8" fill="#3d4148"/>
+        <rect x="132" y="680" width="22" height="40" rx="8" fill="#3d4148"/>
+      </g>
+
+      <!-- labels -->
+      <text class="label" x="600" y="102">Interior mirror</text>
+      <text class="label" x="62" y="404">Left mirror</text>
+      <text class="label" x="1138" y="404">Right mirror</text>
+      <text class="label" x="58" y="150">Left window</text>
+      <text class="label" id="beltLabel" x="66" y="620">Seatbelt</text>
+      <text class="label" x="190" y="546">Lights</text>
+      <text class="label" x="246" y="545">Indicator</text>
+      <text class="label" x="560" y="505">Wipers</text>
+      <text class="label" x="390" y="598">Horn</text>
+      <text class="label" x="510" y="640">Ignition</text>
+      <text class="label" x="790" y="384">Hazard</text>
+      <text class="label" x="85" y="718">Seat lever</text>
+      <text class="label" x="860" y="690">Gear lever</text>
+      <text class="label" x="672" y="752">Handbrake</text>
+    </g></g>
+    <g class="crash-overlay">
+      <rect x="0" y="0" width="1200" height="900" fill="#b71c1c" opacity=".25"/>
+      <path d="M430 250 L300 120 M430 250 L560 90 M430 250 L640 260 M430 250 L330 340 M430 250 L470 340 M430 250 L230 230 M360 180 L320 200 M520 150 L560 175 M560 256 L590 300" stroke="#fff" stroke-width="3" fill="none"/>
+      <text x="600" y="460" font-size="72" font-weight="800" fill="#fff" text-anchor="middle" stroke="#b71c1c" stroke-width="3" paint-order="stroke">CRASH!</text>
+    </g>
+  </svg>
+  </div>
+  <p class="pedal-help">Pedals: the % is how far the pedal is pushed in (clutch 100% = fully pressed, engine disconnected). Press and slide down to push the pedal in (it moves away from you), slide up to let it come back. A pedal stays where you leave it, so you can hold the clutch down and still use the key. The thin bar beside each pedal follows your finger and shows how far it is in.</p>
+  <ol id="steps"></ol>
+  </div>
+</main>
+
+<script>
+// Edit this list to change the drill. `effect` is merged into the car state.
+// Click steps name a `control`; pedal steps name a `pedal` and a `goal` (allowed % ranges).
+// Consecutive steps sharing a `group` may be done in any order.
+// A `floating` step may be done any time (or any time after the step named in `after`),
+//   but before the next non-floating step listed after it.
+// An `optional` step never blocks you; skipping it has a `consequence` when you move off.
+// Redoing a `repeatable` step (a check) is not a mistake. `hinted` optional steps still pulse in Learn mode.
+// `needs` = pedal positions required for a click step to work. `shift` steps are done by dragging the gear lever.
+const STEPS = [
+  { control: 'seat',           text: 'Adjust the seat',                         effect: { seat: true }, id: 'seat' },
+  { control: 'mirrorInterior', text: 'Adjust the interior mirror',              effect: { mirrorInterior: true }, optional: true, after: 'seat', hinted: true, repeatable: true, consequence: 'note',
+    consequenceText: 'You drove with the interior mirror not adjusted.' },
+  { control: 'mirrorLeft',     text: 'Adjust the left mirror',                  effect: { mirrorLeft: true }, optional: true, after: 'seat', hinted: true, repeatable: true, consequence: 'note',
+    consequenceText: 'You drove with the left mirror not adjusted.' },
+  { control: 'mirrorRight',    text: 'Adjust the right mirror',                 effect: { mirrorRight: true }, optional: true, after: 'seat', hinted: true, repeatable: true, consequence: 'note',
+    consequenceText: 'You drove with the right mirror not adjusted.' },
+  { control: 'belt',           text: 'Fasten the seatbelt',                     effect: { belt: true } },
+  { pedal: 'clutch',           text: 'Press the clutch fully down (90%+)',      goal: { clutch: [90, 100] }, group: 'beforeStart' },
+  { pedal: 'brake',            text: 'Press the brake (50%+)',                  goal: { brake: [50, 100] }, group: 'beforeStart' },
+  { control: 'handbrake',      text: 'Check the handbrake is on',               effect: {}, floating: true, repeatable: true },
+  { control: 'gear',           text: 'Check the gear lever is in neutral',      effect: {}, gesture: 'gear-wiggle', floating: true, repeatable: true },
+  { control: 'ignition',       text: 'Insert the key',                          effect: { keyIn: true }, floating: true, id: 'keyIn' },
+  { control: 'ignition',       text: 'Ignition on, check the warning lights',   effect: { ignitionOn: true }, id: 'ignitionOn', floating: true, after: 'keyIn' },
+  { control: 'ignition',       text: 'Start the engine',                        effect: { engine: true }, id: 'startEngine', gesture: 'engine-start',
+    needs: { clutch: [90, 100] }, needsText: 'The engine won’t start: the clutch must be fully down.' },
+  { shift: '1',                text: 'Select 1st gear (clutch fully down)' },
+  { control: 'mirrorInterior', text: 'Check the interior mirror',               effect: {}, optional: true, after: 'startEngine', repeatable: true, consequence: 'crash' },
+  { control: 'mirrorLeft',     text: 'Check the left mirror',                   effect: {}, optional: true, after: 'startEngine', repeatable: true, consequence: 'crash' },
+  { control: 'indicator',      text: 'Signal left',                             effect: { indicator: true }, optional: true, after: 'ignitionOn', consequence: 'crash' },
+  { control: 'shoulder',       text: 'Look over your left shoulder (blind spot)', effect: {}, optional: true, after: 'startEngine', repeatable: true, consequence: 'crash' },
+  { control: 'handbrake',      text: 'Release the handbrake',                   effect: { handbrake: false }, floating: true, after: 'startEngine' },
+  { control: 'lights',         text: 'Light switch to AUTO',                     effect: { lights: true }, optional: true, consequence: 'note',
+    consequenceText: 'You drove off without the lights on AUTO.' },
+  { pedal: 'brake',            text: 'Foot off the brake (gas is up to you)',   goal: { brake: [0, 2] } },
+  { pedal: 'clutch',           text: 'Slowly let the clutch up through the biting point', goal: 'moveOff', effect: { indicator: false, moving: true } },
+  { shift: '2',                text: 'Shift up to 2nd: clutch down, lever to 2, clutch up, gas' },
+  { shift: '3',                text: 'Shift up to 3rd' },
+  { pedal: 'gas',              text: 'Drive at 40 km/h in 3rd', goal: 'cruise' },
+];
+
+const CONTROL_LABELS = {
+  seat: 'Seat lever', mirrorInterior: 'Interior mirror', mirrorLeft: 'Left mirror', mirrorRight: 'Right mirror',
+  belt: 'Seatbelt', handbrake: 'Handbrake', gear: 'Gear lever', clutch: 'Clutch', brake: 'Brake', gas: 'Gas',
+  ignition: 'Ignition', lights: 'Light switch', indicator: 'Indicator', wipers: 'Wipers', horn: 'Horn',
+  hazard: 'Hazard lights', shoulder: 'Shoulder check',
+};
+
+const INITIAL_CAR = {
+  seat: false, mirrorInterior: false, mirrorLeft: false, mirrorRight: false, belt: false,
+  handbrake: true, gear: 'N', keyIn: false, ignitionOn: false, engine: false,
+  lights: false, indicator: false, moving: false, stalled: false, crashed: false,
+};
+const FLAG_KEYS = Object.keys(INITIAL_CAR).filter(key => typeof INITIAL_CAR[key] === 'boolean');
+const COLLAR_REST = { x: 790, y: 680 };
+const COLLAR_HALF_WIDTH = 12;
+const BOOT_BASE = { left: 762, right: 818, y: 750 };
+const BOOT_BULGE = 5;
+const BOOT_FOLD_POSITIONS = [0.25, 0.5, 0.75];
+const GEAR_POSE = {
+  N: { dx: 0, dy: 0, angle: 0 }, R: { dx: -26, dy: -12, angle: -16 },
+  1: { dx: -14, dy: -12, angle: -10 }, 2: { dx: -14, dy: 12, angle: -8 },
+  3: { dx: 0, dy: -14, angle: 0 }, 4: { dx: 0, dy: 14, angle: 0 },
+  5: { dx: 14, dy: -12, angle: 10 }, 6: { dx: 14, dy: 12, angle: 8 },
+};
+const NEUTRAL_WIGGLE_POSES = [
+  { dx: -11, dy: 0, angle: -7 }, { dx: 11, dy: 0, angle: 7 },
+  { dx: -7, dy: 0, angle: -4 }, { dx: 7, dy: 0, angle: 4 }, GEAR_POSE.N,
+];
+const GEAR_MOVE_MS = 300;
+const WIGGLE_STEP_MS = 170;
+const DIAL_START_DEG = -135;
+const DIAL_SWEEP_DEG = 270;
+const DIALS = [
+  { groupId: 'tachTicks', cx: 322, cy: 398, ticks: 14, majorEvery: 2, labels: ['0', '1', '2', '3', '4', '5', '6', '7'] },
+  { groupId: 'speedTicks', cx: 458, cy: 398, ticks: 24, majorEvery: 4, labels: ['0', '40', '80', '120', '160', '200', '240'] },
+];
+const DIAL_RADIUS = { majorTickStart: 32, minorTickStart: 35, tickEnd: 39, label: 25 };
+const NEEDLE_ANGLE = { rest: -135, idle: -104, driving: -58, cruising: -112, startKick: -85 };
+const START_KICK_MS = 450;
+const MODE = { learn: 'learn', exam: 'exam' };
+const OUTCOME = { right: 'right', wrong: 'wrong', repeat: 'repeat', ignored: 'ignored' };
+const FLASH_CLASS = { right: 'ok', wrong: 'wrong' };
+const FLASH_MS = 700;
+const MS_PER_SECOND = 1000;
+const PERCENT = 100;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+const cockpit = document.getElementById('cockpit');
+const gearKnob = document.getElementById('gearKnob');
+const gearBoot = document.getElementById('gearBoot');
+const gearBootFolds = document.getElementById('gearBootFolds');
+const tachNeedle = document.getElementById('tachNeedle');
+const speedNeedle = document.getElementById('speedNeedle');
+const mfdTop = document.getElementById('mfdTop');
+const mfdBottom = document.getElementById('mfdBottom');
+const statusBox = document.getElementById('status');
+const stepsList = document.getElementById('steps');
+const PEDAL_COLUMNS = { clutch: 172, brake: 342, gas: 512 };
+const PEDAL_COLUMN = { top: 700, width: 160, artWidth: 138, artHeight: 172, gaugeTop: 708, gaugeHeight: 156 };
+const PEDAL_LABELS = { clutch: 'Clutch', brake: 'Brake', gas: 'Gas' };
+const PEDAL_SHAPES = {
+  clutch: { padX: 10, padWidth: 80, padTop: 92, padHeight: 66, ribs: 'horizontal' },
+  brake: { padX: 4, padWidth: 92, padTop: 92, padHeight: 66, ribs: 'horizontal' },
+  gas: { padX: 26, padWidth: 48, padTop: 66, padHeight: 116, ribs: 'vertical' },
+};
+const PEDAL_TRAVEL = { dropPx: 34, shrink: 0.24 };
+const roadDash = cockpit.querySelector('.road-dash');
+
+function createSvgElement(tag, attributes) {
+  const element = document.createElementNS(SVG_NS, tag);
+  Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, value));
+  return element;
+}
+
+function dialPoint(dial, angleDeg, radius) {
+  const radians = (angleDeg - 90) * Math.PI / 180;
+  return [dial.cx + radius * Math.cos(radians), dial.cy + radius * Math.sin(radians)];
+}
+
+function dialTick(dial, index) {
+  const angle = DIAL_START_DEG + DIAL_SWEEP_DEG * index / dial.ticks;
+  const isMajor = index % dial.majorEvery === 0;
+  const [x1, y1] = dialPoint(dial, angle, isMajor ? DIAL_RADIUS.majorTickStart : DIAL_RADIUS.minorTickStart);
+  const [x2, y2] = dialPoint(dial, angle, DIAL_RADIUS.tickEnd);
+  return createSvgElement('line', { x1, y1, x2, y2, stroke: '#d8dce2', 'stroke-width': isMajor ? 1.8 : 0.9 });
+}
+
+function dialLabel(dial, text, index) {
+  const angle = DIAL_START_DEG + DIAL_SWEEP_DEG * index / (dial.labels.length - 1);
+  const [x, y] = dialPoint(dial, angle, DIAL_RADIUS.label);
+  const label = createSvgElement('text', { x, y, class: 'dial-text' });
+  label.textContent = text;
+  return label;
+}
+
+function drawDial(dial) {
+  const tickIndexes = Array.from({ length: dial.ticks + 1 }, (_, index) => index);
+  const ticks = tickIndexes.map(index => dialTick(dial, index));
+  const labels = dial.labels.map((text, index) => dialLabel(dial, text, index));
+  document.getElementById(dial.groupId).replaceChildren(...ticks, ...labels);
+}
+
+const PEDALS = ['clutch', 'brake', 'gas'];
+const CLUTCH_ZONE = { biteTop: 60, biteBottom: 20 };
+// Moving off on idle alone works too (the engine idle control holds the revs), but needs a slower clutch.
+const MOVE_OFF = { minReleaseMs: 800, idleOnlyReleaseMs: 1600, idleOnlyBelowGas: 5, maxGas: 40 };
+const HAZARDS = ['car', 'cyclist', 'pedestrian'];
+const HAZARD_TEXT = { car: 'a car overtaking you', cyclist: 'a cyclist in your blind spot', pedestrian: 'a pedestrian stepping out' };
+
+function newGame(mode) {
+  return {
+    mode, doneSteps: [], lastDone: null, car: { ...INITIAL_CAR }, pedals: { clutch: 0, brake: 0, gas: 0 },
+    biteEnteredAt: null, speed: 0, rpm: 0, mistakes: [], notice: null, startedAt: null, finishedAt: null, crash: null, skipped: [],
+  };
+}
+
+function isFinished(game) {
+  return game.finishedAt !== null;
+}
+
+function firstPendingIndex(game) {
+  return STEPS.findIndex((step, index) => !step.optional && !game.doneSteps.includes(index));
+}
+
+function buildPrerequisites(steps) {
+  let unit = { group: null, indexes: [], requires: [] };
+  let pendingFloating = [];
+  const afterRequirement = step => (step.after ? [steps.findIndex(other => other.id === step.after)] : []);
+  return steps.map((step, index) => {
+    if (step.optional) return afterRequirement(step);
+    if (step.floating) {
+      pendingFloating = [...pendingFloating, index];
+      return afterRequirement(step);
+    }
+    const joinsUnit = Boolean(step.group) && step.group === unit.group;
+    if (!joinsUnit) {
+      unit = { group: step.group ?? null, indexes: [], requires: [...unit.indexes, ...pendingFloating] };
+      pendingFloating = [];
+    }
+    unit.indexes.push(index);
+    return unit.requires;
+  });
+}
+
+const PREREQUISITES = buildPrerequisites(STEPS);
+
+function candidateIndexes(game) {
+  const isAvailable = index => !game.doneSteps.includes(index)
+    && PREREQUISITES[index].every(required => game.doneSteps.includes(required));
+  return STEPS.map((_, index) => index).filter(isAvailable);
+}
+
+function isBackgroundStep(step) {
+  return (Boolean(step.floating) || step.consequence === 'note') && !step.hinted;
+}
+
+function primaryCandidates(game) {
+  const candidates = candidateIndexes(game);
+  const main = candidates.filter(index => !isBackgroundStep(STEPS[index]));
+  if (main.length) return main;
+  const nextRequired = firstPendingIndex(game);
+  const blockers = candidates.filter(index => (PREREQUISITES[nextRequired] ?? []).includes(index));
+  return blockers.length ? blockers : candidates;
+}
+
+function optionalCandidates(game) {
+  const primary = primaryCandidates(game);
+  return candidateIndexes(game).filter(index => !primary.includes(index));
+}
+
+function currentStepIndex(game) {
+  return primaryCandidates(game)[0] ?? firstPendingIndex(game);
+}
+
+function lastDoneWithControl(game, control) {
+  return [...game.doneSteps].reverse().find(index => STEPS[index].control === control);
+}
+
+function pedalsWithin(goal, pedals) {
+  return Object.entries(goal).every(([pedal, [min, max]]) => pedals[pedal] >= min && pedals[pedal] <= max);
+}
+
+function withMistake(game, text) {
+  const mistake = { stepIndex: currentStepIndex(game), text };
+  return { ...game, mistakes: [...game.mistakes, mistake], notice: text };
+}
+
+function skippedOptionalSteps(game) {
+  return STEPS.map((_, index) => index).filter(index => STEPS[index].optional && !game.doneSteps.includes(index));
+}
+
+function finishGame(game, context) {
+  const skipped = skippedOptionalSteps(game);
+  const crashed = skipped.some(index => STEPS[index].consequence === 'crash');
+  const skipMistakes = skipped.map(index => ({ stepIndex: index, text: `Skipped: ${STEPS[index].text}` }));
+  return {
+    ...game, finishedAt: context.now, skipped, crash: crashed ? context.hazard : null,
+    mistakes: [...game.mistakes, ...skipMistakes], car: { ...game.car, crashed },
+  };
+}
+
+function completeStep(game, index, context) {
+  const done = {
+    ...game, doneSteps: [...game.doneSteps, index], lastDone: index,
+    car: { ...game.car, ...STEPS[index].effect }, startedAt: game.startedAt ?? context.now,
+  };
+  if (STEPS[index].goal === 'moveOff') return crashIfUnchecked(done, context);
+  if (STEPS[index].goal === 'cruise') return finishGame(done, context);
+  return done;
+}
+
+function crashIfUnchecked(game, context) {
+  const crashed = skippedOptionalSteps(game).some(index => STEPS[index].consequence === 'crash');
+  return crashed ? finishGame(game, context) : { ...game, speed: MOVE_OFF_SPEED_KMH };
+}
+
+function selectGear(game, gear, context) {
+  if (isFinished(game)) return { game, outcome: OUTCOME.ignored };
+  const started = { ...game, startedAt: game.startedAt ?? context.now, notice: null, lastRepeated: undefined };
+  const needsClutch = gear !== 'N' && started.pedals.clutch < 90;
+  if (needsClutch) return { game: withMistake(started, 'Crunch! Clutch fully down before you change gear.'), outcome: OUTCOME.wrong };
+  const shifted = { ...started, car: { ...started.car, gear } };
+  const matched = candidateIndexes(shifted).find(index => STEPS[index].shift === gear);
+  if (matched === undefined) return { game: { ...shifted, notice: `Lever in ${gear}.` }, outcome: OUTCOME.repeat };
+  return { game: completePedalSteps(completeStep(shifted, matched, context), context), outcome: OUTCOME.right };
+}
+
+function completePedalSteps(game, context) {
+  const ready = candidateIndexes(game).find(index => typeof STEPS[index].goal === 'object' && pedalsWithin(STEPS[index].goal, game.pedals));
+  if (ready === undefined) return game;
+  return completePedalSteps(completeStep(game, ready, context), context);
+}
+
+function restartAfterStall(game) {
+  if (game.pedals.clutch < 90) return { game: withMistake(game, 'Clutch fully down before restarting the engine.'), outcome: OUTCOME.wrong };
+  const car = { ...game.car, engine: true, stalled: false };
+  return { game: { ...game, car, notice: 'Engine running again. Try the clutch slower this time.' }, outcome: OUTCOME.repeat };
+}
+
+function clickControl(game, control, context) {
+  if (isFinished(game)) return { game, outcome: OUTCOME.ignored };
+  const started = { ...game, startedAt: game.startedAt ?? context.now, notice: null, lastRepeated: undefined };
+  if (started.car.stalled && control === 'ignition') return restartAfterStall(started);
+  const matched = candidateIndexes(started).findLast(index => STEPS[index].control === control);
+  const repeated = lastDoneWithControl(started, control);
+  const isHarmlessRepeat = repeated !== undefined && Boolean(STEPS[repeated].repeatable);
+  if (matched === undefined && isHarmlessRepeat) {
+    return { game: { ...started, lastRepeated: repeated }, outcome: OUTCOME.repeat };
+  }
+  if (matched === undefined) {
+    return { game: withMistake(started, `Not the ${CONTROL_LABELS[control].toLowerCase()}.`), outcome: OUTCOME.wrong };
+  }
+  const step = STEPS[matched];
+  if (step.needs && !pedalsWithin(step.needs, started.pedals)) {
+    return { game: withMistake(started, step.needsText), outcome: OUTCOME.wrong };
+  }
+  return { game: completePedalSteps(completeStep(started, matched, context), context), outcome: OUTCOME.right };
+}
+
+function isMoveOffAvailable(game) {
+  return candidateIndexes(game).some(index => STEPS[index].goal === 'moveOff');
+}
+
+function engagementProblem(game, now) {
+  if (game.car.handbrake) return 'The handbrake is still on.';
+  if (game.car.gear !== '1') return `You tried to move off in ${game.car.gear === 'R' ? 'reverse' : `gear ${game.car.gear}`}. Use 1st.`;
+  if (!isMoveOffAvailable(game)) return `You let the clutch up before you were ready. Still to do: ${primaryCandidates(game).map(index => STEPS[index].text).join(', ')}.`;
+  const isIdleOnly = game.pedals.gas < MOVE_OFF.idleOnlyBelowGas;
+  const minReleaseMs = isIdleOnly ? MOVE_OFF.idleOnlyReleaseMs : MOVE_OFF.minReleaseMs;
+  const releaseMs = now - (game.biteEnteredAt ?? now);
+  if (releaseMs < minReleaseMs) return isIdleOnly ? 'Without gas the clutch has to come up even slower.' : 'You let the clutch up too fast.';
+  return null;
+}
+
+function stall(game, problem) {
+  const stalled = withMistake(game, `Stalled! ${problem} Clutch down and turn the key to restart.`);
+  return { ...stalled, car: { ...stalled.car, engine: false, stalled: true } };
+}
+
+function engageClutch(game, context) {
+  const problem = engagementProblem(game, context.now);
+  if (problem) return stall(game, problem);
+  const moveOffIndex = STEPS.findIndex(step => step.goal === 'moveOff');
+  const rough = game.pedals.gas > MOVE_OFF.maxGas;
+  const checked = rough ? withMistake(game, 'Too much gas: the car lurched forward.') : game;
+  return completeStep(checked, moveOffIndex, context);
+}
+
+function nextBiteEnteredAt(game, previousClutch, clutch, now) {
+  if (clutch >= CLUTCH_ZONE.biteTop) return null;
+  if (previousClutch >= CLUTCH_ZONE.biteTop) return now;
+  return game.biteEnteredAt;
+}
+
+function isDriveEngaged(car) {
+  return car.engine && car.gear !== 'N' && !car.moving;
+}
+
+function applyPedal(game, pedal, depth, context) {
+  if (isFinished(game)) return game;
+  const previousClutch = game.pedals.clutch;
+  const pedals = { ...game.pedals, [pedal]: depth };
+  const biteEnteredAt = pedal === 'clutch' ? nextBiteEnteredAt(game, previousClutch, depth, context.now) : game.biteEnteredAt;
+  const moved = { ...game, pedals, biteEnteredAt, notice: null };
+  const clutchCameUp = pedal === 'clutch' && previousClutch >= CLUTCH_ZONE.biteBottom && depth < CLUTCH_ZONE.biteBottom;
+  if (clutchCameUp && isDriveEngaged(moved.car)) return engageClutch(moved, context);
+  return completePedalSteps(moved, context);
+}
+
+const IDLE_RPM = 800;
+const TACH_MAX_RPM = 7000;
+const SPEEDO_MAX_KMH = 240;
+const GAS_RPM_PER_PERCENT = 50;
+const STALL_RPM = 600;
+const SHIFT_UP_RPM = 4500;
+const MOVE_OFF_SPEED_KMH = 6;
+const COAST_DECEL_KMH_PER_S = 2.5;
+const COAST_DRAG_PER_S = 0.06;
+const BRAKE_DECEL_KMH_PER_S_PER_PERCENT = 0.35;
+// Realistic limits: a 1.5 TSI manages about 0–50 in 5 s in 1st; full braking is roughly 9 m/s² (about 33 km/h per s), so brakes always beat the engine.
+const MAX_ENGINE_ACCEL_KMH_PER_S = { R: 8, 1: 11, 2: 8, 3: 5.5, 4: 4, 5: 3, 6: 2.2 };
+const MAX_ENGINE_BRAKING_KMH_PER_S = 6;
+const RPM_PER_KMH = { R: 140, 1: 135, 2: 75, 3: 50, 4: 37, 5: 30, 6: 25 };
+const GEAR_RESPONSE_PER_S = { R: 0.8, 1: 0.9, 2: 0.6, 3: 0.4, 4: 0.3, 5: 0.25, 6: 0.2 };
+const CRUISE_GOAL = { gear: '3', minSpeedKmh: 38 };
+const SHIFT_UP_NOTICE = 'Revs high: shift up!';
+const ROAD_DASH_KMH_SECONDS = 6;
+
+function clutchEngagement(game) {
+  if (game.car.gear === 'N') return 0;
+  const travel = CLUTCH_ZONE.biteTop - CLUTCH_ZONE.biteBottom;
+  return Math.min(1, Math.max(0, (CLUTCH_ZONE.biteTop - game.pedals.clutch) / travel));
+}
+
+function freeRevs(game) {
+  return game.car.engine ? IDLE_RPM + game.pedals.gas * GAS_RPM_PER_PERCENT : 0;
+}
+
+function nextSpeed(game, seconds) {
+  const engagement = clutchEngagement(game);
+  const gear = game.car.gear;
+  const driveTarget = engagement > 0 ? freeRevs(game) / RPM_PER_KMH[gear] : game.speed;
+  const rawPull = (driveTarget - game.speed) * GEAR_RESPONSE_PER_S[gear];
+  const cappedPull = Math.min(MAX_ENGINE_ACCEL_KMH_PER_S[gear] ?? 0, Math.max(-MAX_ENGINE_BRAKING_KMH_PER_S, rawPull));
+  const pull = engagement * cappedPull * seconds;
+  const coast = (1 - engagement) * (COAST_DECEL_KMH_PER_S + COAST_DRAG_PER_S * game.speed) * seconds;
+  const braking = game.pedals.brake * BRAKE_DECEL_KMH_PER_S_PER_PERCENT * seconds;
+  return Math.max(0, game.speed + pull - coast - braking);
+}
+
+function engineRpm(game) {
+  if (!game.car.engine) return 0;
+  const engagement = clutchEngagement(game);
+  const wheelRpm = engagement > 0 ? game.speed * RPM_PER_KMH[game.car.gear] : 0;
+  return engagement * wheelRpm + (1 - engagement) * freeRevs(game);
+}
+
+function shouldStall(game) {
+  return game.car.engine && clutchEngagement(game) >= 0.8 && game.rpm < STALL_RPM;
+}
+
+function revNotice(game) {
+  if (game.rpm > SHIFT_UP_RPM) return SHIFT_UP_NOTICE;
+  return game.notice === SHIFT_UP_NOTICE ? null : game.notice;
+}
+
+function reachedCruise(game) {
+  const isCandidate = candidateIndexes(game).some(index => STEPS[index].goal === 'cruise');
+  return isCandidate && game.car.gear === CRUISE_GOAL.gear && game.speed >= CRUISE_GOAL.minSpeedKmh && clutchEngagement(game) === 1;
+}
+
+function advanceDriving(game, elapsedMs, context) {
+  if (!game.car.moving || isFinished(game)) return game;
+  const speed = nextSpeed(game, elapsedMs / MS_PER_SECOND);
+  const withSpeed = { ...game, speed };
+  const driven = { ...withSpeed, rpm: engineRpm(withSpeed) };
+  if (shouldStall(driven)) return stall(driven, 'Revs too low for this gear.');
+  const noticed = { ...driven, notice: revNotice(driven) };
+  if (!reachedCruise(noticed)) return noticed;
+  const cruiseIndex = STEPS.findIndex(step => step.goal === 'cruise');
+  return completeStep(noticed, cruiseIndex, context);
+}
+
+function needleAngle(value, max) {
+  return NEEDLE_ANGLE.rest + DIAL_SWEEP_DEG * Math.min(value, max) / max;
+}
+
+function tachAngle(game) {
+  if (game.car.crashed || !game.car.engine) return NEEDLE_ANGLE.rest;
+  const rpm = game.car.moving ? game.rpm : freeRevs(game);
+  return needleAngle(rpm, TACH_MAX_RPM);
+}
+
+function drivingStateText(game) {
+  if (game.rpm > SHIFT_UP_RPM) return 'SHIFT UP';
+  if (game.speed < 0.5) return 'stopped';
+  if (clutchEngagement(game) === 0) return 'coasting';
+  return `gear ${game.car.gear}`;
+}
+
+function displayLines(game) {
+  const { car } = game;
+  if (!car.ignitionOn) return ['', ''];
+  if (car.stalled) return ['STALLED', 'restart'];
+  if (car.moving) return [`${Math.round(game.speed)} km/h`, drivingStateText(game)];
+  if (car.engine) return ['12:00', `gear ${car.gear}`];
+  return ['12:00', 'engine off'];
+}
+
+function renderRoadSpeed(game) {
+  const isRolling = game.speed > 0.5 && !game.car.crashed;
+  roadDash.style.animationPlayState = isRolling ? 'running' : 'paused';
+  if (isRolling) roadDash.style.animationDuration = `${ROAD_DASH_KMH_SECONDS / game.speed}s`;
+}
+
+function renderGauges(game) {
+  tachNeedle.style.transform = `rotate(${tachAngle(game)}deg)`;
+  const speedValue = game.car.crashed ? 0 : game.speed;
+  speedNeedle.style.transform = `rotate(${needleAngle(speedValue, SPEEDO_MAX_KMH)}deg)`;
+  const [topLine, bottomLine] = displayLines(game);
+  mfdTop.textContent = topLine;
+  mfdBottom.textContent = bottomLine;
+  renderRoadSpeed(game);
+  syncSound(game);
+}
+
+function renderCar(game) {
+  FLAG_KEYS.forEach(key => cockpit.classList.toggle(key, game.car[key]));
+  moveLeverTo(game.car.gear);
+  renderGauges(game);
+}
+
+function lerp(from, to, t) {
+  return from + (to - from) * t;
+}
+
+function interpolatePose(from, to, t) {
+  return { dx: lerp(from.dx, to.dx, t), dy: lerp(from.dy, to.dy, t), angle: lerp(from.angle, to.angle, t) };
+}
+
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
+}
+
+function bootTop(pose) {
+  const x = COLLAR_REST.x + pose.dx;
+  const y = COLLAR_REST.y + pose.dy;
+  return { left: x - COLLAR_HALF_WIDTH, right: x + COLLAR_HALF_WIDTH, y };
+}
+
+function bootPath(pose) {
+  const top = bootTop(pose);
+  const midY = (top.y + BOOT_BASE.y) / 2;
+  const leftCurve = `Q${(top.left + BOOT_BASE.left) / 2 - BOOT_BULGE} ${midY} ${top.left} ${top.y}`;
+  const rightCurve = `Q${(top.right + BOOT_BASE.right) / 2 + BOOT_BULGE} ${midY} ${BOOT_BASE.right} ${BOOT_BASE.y}`;
+  return `M${BOOT_BASE.left} ${BOOT_BASE.y} ${leftCurve} L${top.right} ${top.y} ${rightCurve} Z`;
+}
+
+function bootFoldPath(pose, position) {
+  const top = bootTop(pose);
+  const y = lerp(BOOT_BASE.y, top.y, position);
+  const left = lerp(BOOT_BASE.left, top.left, position) + 2;
+  const right = lerp(BOOT_BASE.right, top.right, position) - 2;
+  return `M${left} ${y} Q${(left + right) / 2} ${y + 4} ${right} ${y}`;
+}
+
+function applyLeverPose(pose) {
+  const pivot = `${COLLAR_REST.x} ${COLLAR_REST.y}`;
+  gearKnob.setAttribute('transform', `translate(${pose.dx} ${pose.dy}) rotate(${pose.angle} ${pivot})`);
+  gearBoot.setAttribute('d', bootPath(pose));
+  gearBootFolds.setAttribute('d', BOOT_FOLD_POSITIONS.map(position => bootFoldPath(pose, position)).join(' '));
+}
+
+let leverPose = GEAR_POSE.N;
+let leverAnimationId = 0;
+
+function animateLever(targetPoses, stepMs) {
+  const animationId = ++leverAnimationId;
+  const origin = leverPose;
+  const startedAt = performance.now();
+  const totalMs = stepMs * targetPoses.length;
+  const frame = now => {
+    if (animationId !== leverAnimationId) return;
+    const elapsed = Math.min(Math.max(now - startedAt, 0), totalMs);
+    const segment = Math.min(Math.floor(elapsed / stepMs), targetPoses.length - 1);
+    const from = segment === 0 ? origin : targetPoses[segment - 1];
+    const progress = (elapsed - segment * stepMs) / stepMs;
+    leverPose = interpolatePose(from, targetPoses[segment], easeInOut(progress));
+    applyLeverPose(leverPose);
+    if (elapsed < totalMs) requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+let leverGear = INITIAL_CAR.gear;
+
+function moveLeverTo(gear) {
+  if (gear === leverGear) return;
+  leverGear = gear;
+  animateLever([GEAR_POSE[gear]], GEAR_MOVE_MS);
+}
+
+function kickTachOnStart() {
+  tachNeedle.style.transform = `rotate(${NEEDLE_ANGLE.startKick}deg)`;
+  setTimeout(() => renderCar(game), START_KICK_MS);
+}
+
+const GESTURES = {
+  'gear-wiggle': () => animateLever(NEUTRAL_WIGGLE_POSES, WIGGLE_STEP_MS),
+  'engine-start': kickTachOnStart,
+};
+
+function hintElement(step) {
+  if (step.shift) return cockpit.querySelector('[data-control="gear"]');
+  if (step.pedal) return document.querySelector(`.pedal-track[data-pedal="${step.pedal}"]`);
+  return cockpit.querySelector(`[data-control="${step.control}"]`);
+}
+
+function renderHint(game) {
+  cockpit.querySelectorAll('.hint').forEach(element => element.classList.remove('hint'));
+  pedalTracks.forEach(track => track.classList.remove('hint'));
+  if (game.mode !== MODE.learn || isFinished(game)) return;
+  primaryCandidates(game).forEach(index => hintElement(STEPS[index]).classList.add('hint'));
+}
+
+function feedbackText(game, feedback) {
+  if (!feedback) return '';
+  if (feedback.kind === OUTCOME.wrong) return `✗ ${game.notice}`;
+  if (game.notice) return game.notice;
+  if (feedback.kind === OUTCOME.repeat && game.lastRepeated !== undefined) return `↺ Already done: ${STEPS[game.lastRepeated].text.toLowerCase()} (not a mistake).`;
+  if (feedback.kind === OUTCOME.repeat) return '';
+  return `✓ ${STEPS[game.lastDone].text}`;
+}
+
+function mistakeSummary(game) {
+  const notes = game.skipped.filter(index => STEPS[index].consequence === 'note').map(index => STEPS[index].consequenceText);
+  const others = game.mistakes.filter(mistake => !mistake.text.startsWith('Skipped')).map(mistake => mistake.text);
+  const skippedChecks = game.skipped.filter(index => STEPS[index].consequence === 'crash').map(index => STEPS[index].text);
+  const skippedLine = skippedChecks.length ? [`You skipped: ${skippedChecks.join(', ')}.`] : [];
+  return [...skippedLine, ...notes, ...new Set(others)].join(' · ') || 'Clean run!';
+}
+
+function finishPrompt(game) {
+  if (game.crash) return `💥 You hit ${HAZARD_TEXT[game.crash]}! Press Restart.`;
+  return 'You moved off safely and reached 40 km/h in 3rd. Press Restart to go again.';
+}
+
+function finishStatus(game) {
+  const seconds = Math.round((game.finishedAt - game.startedAt) / MS_PER_SECOND);
+  return {
+    step: `Done in ${seconds}s · ${game.mistakes.length} mistake(s)`,
+    feedback: mistakeSummary(game),
+    prompt: finishPrompt(game),
+  };
+}
+
+function learnPrompt(game) {
+  const primary = primaryCandidates(game);
+  const texts = primary.map(index => STEPS[index].text).join(' · ');
+  const prompt = primary.length > 1 ? `${texts} (any order)` : texts;
+  const optional = optionalCandidates(game).map(index => STEPS[index].text);
+  return optional.length ? `${prompt}  (also possible now: ${optional.join(' · ')})` : prompt;
+}
+
+function situationPrompt(game) {
+  if (game.car.stalled) return 'Stalled: clutch fully down, then turn the key.';
+  const gasStep = candidateIndexes(game).map(index => STEPS[index]).find(step => step.goal?.gas);
+  if (gasStep && game.pedals.gas > gasStep.goal.gas[1]) return `Too much gas (${Math.round(game.pedals.gas)}%): ease off to ${gasStep.goal.gas[0]}–${gasStep.goal.gas[1]}%.`;
+  const isRevvingWithClutchDown = isMoveOffAvailable(game) && game.pedals.clutch >= 90 && game.pedals.gas > 0;
+  if (isRevvingWithClutchDown) return 'The clutch is fully pressed, so the engine is not connected to the wheels. Slowly slide the clutch up.';
+  return null;
+}
+
+function statusFor(game, feedback) {
+  if (isFinished(game)) return finishStatus(game);
+  const normalPrompt = game.mode === MODE.learn ? learnPrompt(game) : 'What’s next?';
+  const prompt = situationPrompt(game) ?? normalPrompt;
+  return {
+    step: `Step ${game.doneSteps.length + 1} of ${STEPS.length} · mistakes: ${game.mistakes.length}`,
+    feedback: feedbackText(game, feedback),
+    prompt,
+  };
+}
+
+function renderStatus(game, feedback) {
+  const status = statusFor(game, feedback);
+  document.getElementById('status-step').textContent = status.step;
+  document.getElementById('status-feedback').textContent = status.feedback;
+  document.getElementById('status-prompt').textContent = status.prompt;
+  const tone = isFinished(game) && game.crash ? OUTCOME.wrong : feedback?.kind;
+  statusBox.className = tone ?? '';
+}
+
+function stepItem(game, step, index) {
+  const item = document.createElement('li');
+  const isDone = game.doneSteps.includes(index);
+  const isVisible = game.mode === MODE.learn || isDone;
+  const label = step.optional ? `${step.text} (not enforced)` : step.text;
+  item.textContent = isVisible ? label : '?';
+  item.classList.toggle('done', isDone);
+  item.classList.toggle('current', candidateIndexes(game).includes(index));
+  return item;
+}
+
+function renderSteps(game) {
+  stepsList.replaceChildren(...STEPS.map((step, index) => stepItem(game, step, index)));
+}
+
+function padRibs(shape) {
+  const { padX, padWidth, padTop, padHeight, ribs } = shape;
+  const inset = 7;
+  if (ribs === 'vertical') {
+    const xs = [0.3, 0.5, 0.7].map(fraction => padX + padWidth * fraction);
+    return xs.map(x => `M${x} ${padTop + inset} V${padTop + padHeight - inset}`).join(' ');
+  }
+  const ys = [0.25, 0.42, 0.59, 0.76].map(fraction => padTop + padHeight * fraction);
+  return ys.map(y => `M${padX + inset} ${y} H${padX + padWidth - inset}`).join(' ');
+}
+
+function pedalArt(pedal, x) {
+  const shape = PEDAL_SHAPES[pedal];
+  const { padX, padWidth, padTop, padHeight } = shape;
+  const centerX = padX + padWidth / 2;
+  return `<svg class="pedal-art" x="${x}" y="${PEDAL_COLUMN.top}" width="${PEDAL_COLUMN.artWidth}" height="${PEDAL_COLUMN.artHeight}" viewBox="0 0 100 200" preserveAspectRatio="xMidYMid meet">
+    <path d="M10 196 Q50 186 90 196" stroke="#2a2c30" stroke-width="3" fill="none"/>
+    <g class="pedal-move">
+      <path d="M50 0 Q50 ${padTop * 0.55} ${centerX} ${padTop + 6}" stroke="#2b2e33" stroke-width="11" fill="none" stroke-linecap="round"/>
+      <path d="M50 0 Q50 ${padTop * 0.55} ${centerX} ${padTop + 6}" stroke="#454950" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <rect x="${padX}" y="${padTop}" width="${padWidth}" height="${padHeight}" rx="9" fill="#34373d" stroke="#6b717a" stroke-width="2.5"/>
+      <path d="${padRibs(shape)}" stroke="#1b1d20" stroke-width="3.5" stroke-linecap="round"/>
+      <g class="pedal-foot" opacity="0">
+        <path d="M${centerX - 22} 200 L${centerX - 20} ${padTop + padHeight * 0.45} Q${centerX} ${padTop + padHeight * 0.2} ${centerX + 20} ${padTop + padHeight * 0.45} L${centerX + 22} 200 Z" fill="#202227" stroke="#5c626b" stroke-width="2"/>
+        <path d="M${centerX - 14} ${padTop + padHeight * 0.55} Q${centerX} ${padTop + padHeight * 0.4} ${centerX + 14} ${padTop + padHeight * 0.55}" stroke="#3b3e44" stroke-width="3" fill="none"/>
+      </g>
+    </g>
+  </svg>`;
+}
+
+// Pushing a pedal moves it away from you: in this view it rises, shrinks and tilts (foreshortened).
+const PAD_TILT = 0.35;
+
+function pedalTransform(depth, travel) {
+  const fraction = depth / PERCENT;
+  const drop = -travel.dropPx * fraction;
+  const width = 1 - fraction * travel.shrink * 0.5;
+  const height = 1 - fraction * (travel.shrink * 0.5 + PAD_TILT);
+  return `translateY(${drop}px) scale(${width}, ${height})`;
+}
+
+function pedalColumn(pedal) {
+  const x = PEDAL_COLUMNS[pedal];
+  const gaugeX = x + PEDAL_COLUMN.artWidth + 8;
+  const { top, width, gaugeTop, gaugeHeight } = PEDAL_COLUMN;
+  return `<g class="pedal-track" data-pedal="${pedal}">
+    <rect class="pedal-hit" x="${x}" y="${top}" width="${width}" height="192" fill="transparent"/>
+    ${pedalArt(pedal, x)}
+    <rect x="${gaugeX}" y="${gaugeTop}" width="8" height="${gaugeHeight}" rx="4" fill="#2a2c30"/>
+    <rect class="target-band" x="${gaugeX - 3}" width="14" fill="rgba(255,213,74,.35)" stroke="#ffd54a" stroke-width="2" visibility="hidden"/>
+    <rect class="fill" x="${gaugeX}" width="8" rx="4" fill="#d5d9de"/>
+    <text class="pedal-name" x="${x + PEDAL_COLUMN.artWidth / 2}" y="${top + 192}">${PEDAL_LABELS[pedal]} <tspan class="pedal-value"></tspan></text>
+  </g>`;
+}
+
+document.getElementById('pedalColumns').innerHTML = Object.keys(PEDAL_COLUMNS).map(pedalColumn).join('');
+const pedalTracks = [...cockpit.querySelectorAll('.pedal-track')];
+
+function renderTargetBand(band, range) {
+  band.setAttribute('visibility', range ? 'visible' : 'hidden');
+  if (!range) return;
+  const bandHeight = PEDAL_COLUMN.gaugeHeight * Math.max(range[1] - range[0], 2) / PERCENT;
+  band.setAttribute('height', bandHeight);
+  band.setAttribute('y', PEDAL_COLUMN.gaugeTop + PEDAL_COLUMN.gaugeHeight * range[0] / PERCENT);
+}
+
+function renderPedals(game) {
+  const bandSteps = game.mode === MODE.learn ? primaryCandidates(game).map(index => STEPS[index]).filter(step => typeof step.goal === 'object') : [];
+  pedalTracks.forEach(track => {
+    const pedal = track.dataset.pedal;
+    const depth = Math.round(game.pedals[pedal]);
+    const fillHeight = PEDAL_COLUMN.gaugeHeight * depth / PERCENT;
+    const fill = track.querySelector('.fill');
+    fill.setAttribute('height', fillHeight);
+    fill.setAttribute('y', PEDAL_COLUMN.gaugeTop);
+    track.querySelector('.pedal-move').style.transform = pedalTransform(depth, PEDAL_TRAVEL);
+    track.querySelector('.pedal-foot').setAttribute('opacity', depth > 1 ? 0.92 : 0);
+    track.querySelector('.pedal-value').textContent = `${depth}%`;
+    const range = bandSteps.map(step => step.goal[pedal]).find(Boolean);
+    renderTargetBand(track.querySelector('.target-band'), range);
+  });
+}
+
+function renderCrash(game) {
+  HAZARDS.forEach(hazard => cockpit.classList.toggle(`crash-${hazard}`, game.crash === hazard));
+}
+
+function render(game, feedback) {
+  renderCar(game);
+  renderPedals(game);
+  renderCrash(game);
+  renderHint(game);
+  renderStatus(game, feedback);
+  renderSteps(game);
+}
+
+function flash(element, className) {
+  element.classList.add(className);
+  setTimeout(() => element.classList.remove(className), FLASH_MS);
+}
+
+const HORN_MS = 350;
+const HORN_FREQUENCIES_HZ = [420, 520];
+const HORN_VOLUME = 0.06;
+const WIPE_MS = 1400;
+const RADIO_TEXT = '♪ Radio 104.6';
+const CLOCK_TEXT = '12:00';
+let audioContext = null;
+
+function playHorn() {
+  try {
+    audioContext = audioContext ?? new AudioContext();
+    const gain = audioContext.createGain();
+    gain.gain.value = HORN_VOLUME;
+    gain.connect(audioContext.destination);
+    HORN_FREQUENCIES_HZ.forEach(frequency => {
+      const oscillator = audioContext.createOscillator();
+      oscillator.type = 'square';
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + HORN_MS / MS_PER_SECOND);
+    });
+  } catch (error) {
+    console.warn('Horn sound unavailable', error);
+  }
+  return 'Beep beep!';
+}
+
+function toggleHazard() {
+  const isOn = cockpit.classList.toggle('hazard');
+  return isOn ? 'Hazard lights on.' : 'Hazard lights off.';
+}
+
+function toggleGlovebox() {
+  const isOpen = cockpit.classList.toggle('glovebox');
+  return isOpen ? 'Glovebox open: the manual and your sunglasses.' : 'Glovebox closed.';
+}
+
+function sweepWipers(car) {
+  if (!car.ignitionOn) return 'Wipers need the ignition on.';
+  cockpit.classList.add('wiping');
+  setTimeout(() => cockpit.classList.remove('wiping'), WIPE_MS);
+  return 'Swish.';
+}
+
+function toggleRadio() {
+  const isOn = cockpit.classList.toggle('radio');
+  document.getElementById('screenText').textContent = isOn ? RADIO_TEXT : CLOCK_TEXT;
+  setRadioMusic(isOn);
+  return isOn ? 'Radio on.' : 'Radio off.';
+}
+
+// Extras you can play with any time; they are never a mistake.
+// ---- climate: temperature, fan, A/C (extras, never a mistake) ----
+const CLIMATE = { temps: [16, 18, 20, 22, 24, 26, 28], fanLevels: 5, knobSweepDeg: 270, fanNoiseVolume: 0.012, coolBelow: 20, warmFrom: 26 };
+const AIR_COLOR = { cool: '#81d4fa', neutral: '#e8eaed', warm: '#ffab91' };
+let climate = { tempIndex: 3, fan: 0, ac: false };
+let fanNoise = null;
+
+function knobAngle(index, count) {
+  return -CLIMATE.knobSweepDeg / 2 + CLIMATE.knobSweepDeg * index / (count - 1);
+}
+
+function airColor() {
+  const temp = CLIMATE.temps[climate.tempIndex];
+  if (climate.ac || temp < CLIMATE.coolBelow) return AIR_COLOR.cool;
+  if (temp >= CLIMATE.warmFrom) return AIR_COLOR.warm;
+  return AIR_COLOR.neutral;
+}
+
+function updateFanNoise() {
+  try {
+    const volume = soundEnabled ? climate.fan * CLIMATE.fanNoiseVolume : 0;
+    if (!fanNoise && volume === 0) return;
+    fanNoise = fanNoise ?? startFanNoise();
+    fanNoise.gain.gain.setTargetAtTime(volume, audioContext.currentTime, 0.2);
+  } catch (error) {
+    console.warn('Fan sound unavailable', error);
+  }
+}
+
+function startFanNoise() {
+  const context = audio();
+  const source = context.createBufferSource();
+  source.buffer = noiseBuffer(context, 2);
+  source.loop = true;
+  const filter = context.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 900;
+  const gain = context.createGain();
+  gain.gain.value = 0;
+  source.connect(filter).connect(gain).connect(context.destination);
+  source.start();
+  return { gain };
+}
+
+function renderClimate() {
+  const [tempMark, fanMark] = ['climateTemp', 'climateFan'].map(id => cockpit.querySelector(`#${id} .climate-mark`));
+  tempMark.style.transform = `rotate(${knobAngle(climate.tempIndex, CLIMATE.temps.length)}deg)`;
+  fanMark.style.transform = `rotate(${knobAngle(climate.fan, CLIMATE.fanLevels)}deg)`;
+  document.getElementById('climateTempValue').textContent = `${CLIMATE.temps[climate.tempIndex]}°`;
+  document.getElementById('climateFanValue').textContent = `fan ${climate.fan}`;
+  cockpit.classList.toggle('ac-on', climate.ac);
+  cockpit.classList.toggle('fan-on', climate.fan > 0);
+  cockpit.style.setProperty('--air-color', airColor());
+  cockpit.style.setProperty('--air-speed', `${1.6 / Math.max(climate.fan, 1)}s`);
+  updateFanNoise();
+}
+
+function turnTemperature() {
+  climate = { ...climate, tempIndex: (climate.tempIndex + 1) % CLIMATE.temps.length };
+  renderClimate();
+  return `Temperature ${CLIMATE.temps[climate.tempIndex]}°C.`;
+}
+
+function turnFan() {
+  climate = { ...climate, fan: (climate.fan + 1) % CLIMATE.fanLevels };
+  renderClimate();
+  return climate.fan ? `Fan speed ${climate.fan}.` : 'Fan off.';
+}
+
+function toggleAc(car) {
+  climate = { ...climate, ac: !climate.ac };
+  renderClimate();
+  if (!climate.ac) return 'A/C off.';
+  return car.engine ? 'A/C on: cold air.' : 'A/C on, but the compressor only runs with the engine on.';
+}
+
+const TOYS = {
+  horn: playHorn, hazard: toggleHazard, glovebox: toggleGlovebox, wipers: sweepWipers, radio: toggleRadio,
+  climateTemp: turnTemperature, climateFan: turnFan, climateAc: toggleAc,
+};
+
+// ---- sound: everything is synthesized with Web Audio, no files ----
+const SOUND = { engineVolume: 0.05, firingPerRpm: 2 / 60, filterBaseHz: 300, filterPerRpm: 0.12, gasVolumeBoost: 60, tickMs: 380 };
+let soundEnabled = true;
+let engineVoice = null;
+let indicatorTimer = null;
+let soundState = { engine: false, gear: 'N', crash: null, mistakes: 0, indicator: false };
+
+function audio() {
+  audioContext = audioContext ?? new AudioContext();
+  if (audioContext.state === 'suspended') audioContext.resume();
+  return audioContext;
+}
+
+function noiseBuffer(context, seconds) {
+  const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * seconds), context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  samples.forEach((_, index) => { samples[index] = Math.random() * 2 - 1; });
+  return buffer;
+}
+
+function playNoise({ seconds, frequency, volume, filterType }) {
+  if (!soundEnabled) return;
+  try {
+    const context = audio();
+    const source = context.createBufferSource();
+    source.buffer = noiseBuffer(context, seconds);
+    const filter = context.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.value = frequency;
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(volume, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + seconds);
+    source.connect(filter).connect(gain).connect(context.destination);
+    source.start();
+  } catch (error) {
+    console.warn('Sound unavailable', error);
+  }
+}
+
+const playShift = () => playNoise({ seconds: 0.08, frequency: 1800, volume: 0.25, filterType: 'bandpass' });
+const playCrunch = () => playNoise({ seconds: 0.45, frequency: 3500, volume: 0.35, filterType: 'highpass' });
+const playTick = () => playNoise({ seconds: 0.03, frequency: 2500, volume: 0.2, filterType: 'bandpass' });
+const playStallThud = () => playNoise({ seconds: 0.35, frequency: 180, volume: 0.5, filterType: 'lowpass' });
+const playStarter = () => playNoise({ seconds: 0.6, frequency: 220, volume: 0.35, filterType: 'bandpass' });
+
+function playCrash() {
+  playNoise({ seconds: 1.2, frequency: 400, volume: 0.6, filterType: 'lowpass' });
+  playNoise({ seconds: 0.8, frequency: 4000, volume: 0.3, filterType: 'highpass' });
+}
+
+// Engine voice: firing-frequency sawtooth + half-order rumble + 2nd harmonic, gritty soft-clip,
+// lumpy idle (amplitude pulses at half the firing rate), small pitch wobble, and intake/exhaust noise that grows with load.
+const ENGINE_VOICE = {
+  subGain: 0.9, harmonicGain: 0.25, noiseBaseGain: 0.15, noisePerGas: 0.012,
+  idleLumpDepth: 0.35, highRevLumpDepth: 0.08, lumpFadeRpm: 4000,
+  wobbleHz: 5.3, wobbleDepthHz: 1.2, driveAmount: 2.5,
+  noiseBaseHz: 250, noisePerRpm: 0.15,
+};
+
+function softClipCurve(amount) {
+  const samples = 256;
+  return Float32Array.from({ length: samples }, (_, index) => {
+    const x = (index / (samples - 1)) * 2 - 1;
+    return Math.tanh(amount * x) / Math.tanh(amount);
+  });
+}
+
+function oscillatorInto(context, type, destination, gainValue) {
+  const oscillator = context.createOscillator();
+  oscillator.type = type;
+  const gain = context.createGain();
+  gain.gain.value = gainValue;
+  oscillator.connect(gain).connect(destination);
+  oscillator.start();
+  return oscillator;
+}
+
+function startEngineVoice() {
+  const context = audio();
+  const shaper = context.createWaveShaper();
+  shaper.curve = softClipCurve(ENGINE_VOICE.driveAmount);
+  const filter = context.createBiquadFilter();
+  filter.type = 'lowpass';
+  const lump = context.createGain();
+  lump.gain.value = 1 - ENGINE_VOICE.idleLumpDepth;
+  const gain = context.createGain();
+  gain.gain.value = 0;
+  shaper.connect(filter).connect(lump).connect(gain).connect(context.destination);
+
+  const base = oscillatorInto(context, 'sawtooth', shaper, 1);
+  const sub = oscillatorInto(context, 'sine', shaper, ENGINE_VOICE.subGain);
+  const harmonic = oscillatorInto(context, 'square', shaper, ENGINE_VOICE.harmonicGain);
+
+  const lumpOscillator = context.createOscillator();
+  const lumpDepth = context.createGain();
+  lumpDepth.gain.value = ENGINE_VOICE.idleLumpDepth;
+  lumpOscillator.connect(lumpDepth).connect(lump.gain);
+  lumpOscillator.start();
+
+  const wobble = context.createOscillator();
+  wobble.frequency.value = ENGINE_VOICE.wobbleHz;
+  const wobbleDepth = context.createGain();
+  wobbleDepth.gain.value = ENGINE_VOICE.wobbleDepthHz;
+  wobble.connect(wobbleDepth);
+  [base, sub].forEach(oscillator => wobbleDepth.connect(oscillator.frequency));
+  wobble.start();
+
+  const noise = context.createBufferSource();
+  noise.buffer = noiseBuffer(context, 2);
+  noise.loop = true;
+  const noiseFilter = context.createBiquadFilter();
+  noiseFilter.type = 'bandpass';
+  noiseFilter.Q.value = 1.5;
+  const noiseGain = context.createGain();
+  noiseGain.gain.value = ENGINE_VOICE.noiseBaseGain;
+  noise.connect(noiseFilter).connect(noiseGain).connect(filter);
+  noise.start();
+
+  return { base, sub, harmonic, filter, gain, lumpOscillator, lumpDepth, noiseFilter, noiseGain };
+}
+
+function isEngineAudible(game) {
+  return soundEnabled && game.car.engine && !game.car.crashed;
+}
+
+function updateEngineVoice(game) {
+  if (!isEngineAudible(game)) {
+    if (engineVoice) engineVoice.gain.gain.setTargetAtTime(0, audioContext.currentTime, 0.15);
+    return;
+  }
+  engineVoice = engineVoice ?? startEngineVoice();
+  const rpm = game.car.moving ? game.rpm : freeRevs(game);
+  const firingHz = rpm * SOUND.firingPerRpm;
+  const now = audioContext.currentTime;
+  const glide = 0.05;
+  engineVoice.base.frequency.setTargetAtTime(firingHz, now, glide);
+  engineVoice.sub.frequency.setTargetAtTime(firingHz / 2, now, glide);
+  engineVoice.harmonic.frequency.setTargetAtTime(firingHz * 2, now, glide);
+  engineVoice.lumpOscillator.frequency.setTargetAtTime(firingHz / 2, now, glide);
+  const lumpDepth = lerp(ENGINE_VOICE.idleLumpDepth, ENGINE_VOICE.highRevLumpDepth, Math.min(1, rpm / ENGINE_VOICE.lumpFadeRpm));
+  engineVoice.lumpDepth.gain.setTargetAtTime(lumpDepth, now, 0.1);
+  engineVoice.filter.frequency.setTargetAtTime(SOUND.filterBaseHz + rpm * SOUND.filterPerRpm, now, glide);
+  engineVoice.noiseFilter.frequency.setTargetAtTime(ENGINE_VOICE.noiseBaseHz + rpm * ENGINE_VOICE.noisePerRpm, now, glide);
+  engineVoice.noiseGain.gain.setTargetAtTime(ENGINE_VOICE.noiseBaseGain + game.pedals.gas * ENGINE_VOICE.noisePerGas, now, 0.1);
+  engineVoice.gain.gain.setTargetAtTime(SOUND.engineVolume * (1 + game.pedals.gas / SOUND.gasVolumeBoost), now, 0.08);
+}
+
+function setIndicatorTicking(isOn) {
+  clearInterval(indicatorTimer);
+  indicatorTimer = isOn ? setInterval(playTick, SOUND.tickMs) : null;
+}
+
+function playSoundEvents(previous, current, game) {
+  if (!previous.engine && current.engine) playStarter();
+  if (previous.engine && !current.engine && game.car.stalled) playStallThud();
+  if (previous.gear !== current.gear) playShift();
+  if (!previous.crash && current.crash) playCrash();
+  const lastMistake = game.mistakes.at(-1);
+  const isNewCrunch = current.mistakes > previous.mistakes && Boolean(lastMistake?.text?.startsWith('Crunch'));
+  if (isNewCrunch) playCrunch();
+  if (previous.indicator !== current.indicator) setIndicatorTicking(current.indicator && soundEnabled);
+}
+
+function syncSound(game) {
+  try {
+    updateEngineVoice(game);
+  } catch (error) {
+    console.warn('Engine sound unavailable', error);
+  }
+  const current = {
+    engine: game.car.engine, gear: game.car.gear, crash: game.crash,
+    mistakes: game.mistakes.length, indicator: game.car.indicator && game.car.ignitionOn,
+  };
+  playSoundEvents(soundState, current, game);
+  soundState = current;
+}
+
+// ---- radio: a tiny looping tune (C – Am – F – G), synthesized ----
+const RADIO_MUSIC = {
+  stepMs: 270,
+  volume: 0.05,
+  stepsPerChord: 8,
+  chords: [[48, 60, 64, 67], [45, 57, 60, 64], [41, 53, 57, 60], [43, 55, 59, 62]],
+  arpeggio: [1, 2, 3, 2, 1, 2, 3, 2],
+  melody: [
+    72, null, 76, 74, 72, null, 67, null,
+    69, null, 72, null, 76, 74, 72, null,
+    69, null, 72, 77, 76, null, 72, null,
+    71, null, 74, null, 79, 77, 74, null,
+  ],
+};
+const MIDI_A4 = 69;
+const A4_HZ = 440;
+const SEMITONES_PER_OCTAVE = 12;
+let radioTimer = null;
+let radioStep = 0;
+
+function midiToHz(note) {
+  return A4_HZ * 2 ** ((note - MIDI_A4) / SEMITONES_PER_OCTAVE);
+}
+
+function playNote({ note, seconds, waveform, volume }) {
+  try {
+    const context = audio();
+    const oscillator = context.createOscillator();
+    oscillator.type = waveform;
+    oscillator.frequency.value = midiToHz(note);
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(volume, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + seconds);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + seconds);
+  } catch (error) {
+    console.warn('Radio unavailable', error);
+  }
+}
+
+function radioTick() {
+  const { chords, arpeggio, melody, stepsPerChord, volume } = RADIO_MUSIC;
+  const beat = radioStep % stepsPerChord;
+  const chord = chords[Math.floor(radioStep / stepsPerChord) % chords.length];
+  if (beat === 0) playNote({ note: chord[0], seconds: 0.9, waveform: 'triangle', volume: volume * 1.6 });
+  playNote({ note: chord[arpeggio[beat]], seconds: 0.18, waveform: 'square', volume: volume * 0.3 });
+  const melodyNote = melody[radioStep % melody.length];
+  if (melodyNote !== null) playNote({ note: melodyNote, seconds: 0.3, waveform: 'triangle', volume });
+  radioStep += 1;
+}
+
+function setRadioMusic(isOn) {
+  clearInterval(radioTimer);
+  radioTimer = null;
+  if (!isOn || !soundEnabled) return;
+  radioStep = 0;
+  radioTimer = setInterval(radioTick, RADIO_MUSIC.stepMs);
+}
+
+document.getElementById('toggle-sound').addEventListener('click', event => {
+  soundEnabled = !soundEnabled;
+  event.currentTarget.classList.toggle('active', soundEnabled);
+  setIndicatorTicking(soundEnabled && soundState.indicator);
+  setRadioMusic(cockpit.classList.contains('radio'));
+  updateFanNoise();
+  syncSound(game);
+});
+
+let game = newGame(MODE.learn);
+
+function actionContext() {
+  return { now: performance.now(), hazard: randomItem(HAZARDS) };
+}
+
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+cockpit.addEventListener('click', event => {
+  const element = event.target.closest('.ctl');
+  if (!element) return;
+  const control = element.dataset.control;
+  if (control === 'gear') return;
+  if (TOYS[control]) {
+    flash(element, 'ok');
+    document.getElementById('status-feedback').textContent = TOYS[control](game.car);
+    return;
+  }
+  const result = clickControl(game, control, actionContext());
+  game = result.game;
+  if (result.outcome === OUTCOME.ignored) return;
+  const flashClass = FLASH_CLASS[result.outcome];
+  if (flashClass) flash(element, flashClass);
+  render(game, { kind: result.outcome, control });
+  const gestureStep = { [OUTCOME.right]: game.lastDone, [OUTCOME.repeat]: game.lastRepeated }[result.outcome];
+  const gesture = gestureStep === undefined || gestureStep === null ? null : STEPS[gestureStep].gesture;
+  if (gesture) GESTURES[gesture]();
+});
+
+function depthFromPointer(track, event) {
+  const box = track.querySelector('.pedal-hit').getBoundingClientRect();
+  return Math.min(1, Math.max(0, (event.clientY - box.top) / box.height)) * PERCENT;
+}
+
+function capturePointer(track, pointerId) {
+  try {
+    track.setPointerCapture(pointerId);
+  } catch (error) {
+    console.warn('Pointer capture unavailable', error);
+  }
+}
+
+function pedalFeedback(before, after) {
+  if (after.mistakes.length > before.mistakes.length) return { kind: OUTCOME.wrong };
+  if (after.doneSteps.length > before.doneSteps.length) return { kind: OUTCOME.right };
+  return null;
+}
+
+function pressPedal(pedal, depth) {
+  const before = game;
+  game = applyPedal(game, pedal, depth, actionContext());
+  const feedback = pedalFeedback(before, game);
+  if (feedback) render(game, feedback);
+  if (!feedback) renderPedalsOnly(game);
+}
+
+function renderPedalsOnly(game) {
+  renderPedals(game);
+  renderGauges(game);
+  document.getElementById('status-prompt').textContent = statusFor(game, null).prompt;
+}
+
+const draggingPedals = new Set();
+
+['pointerup', 'pointercancel', 'blur'].forEach(type => window.addEventListener(type, () => draggingPedals.clear()));
+
+pedalTracks.forEach(track => {
+  const pedal = track.dataset.pedal;
+  track.addEventListener('pointerdown', event => {
+    draggingPedals.add(pedal);
+    capturePointer(track, event.pointerId);
+    pressPedal(pedal, depthFromPointer(track, event));
+  });
+  track.addEventListener('pointermove', event => {
+    const isButtonHeld = event.buttons !== 0;
+    if (!isButtonHeld) draggingPedals.delete(pedal);
+    if (!draggingPedals.has(pedal)) return;
+    pressPedal(pedal, depthFromPointer(track, event));
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => track.addEventListener(type, () => draggingPedals.delete(pedal)));
+});
+
+// ---- gear lever: drag the knob through the H-gate (no menu) ----
+const GATE_SCALE = 5;
+const GATE_ROW_DY = 12;
+const GATE_ENGAGE_DY = 8;
+const NEUTRAL_ROW_TOLERANCE = 4;
+const GATE_MIN_DX = -26;
+const GATE_MAX_DX = 14;
+const LEVER_TILT_PER_DX = 0.7;
+const TAP_TOLERANCE_PX = 6;
+const VIEWBOX_WIDTH = 1200;
+const GATE_COLUMNS = [
+  { dx: -26, up: 'R', down: null }, { dx: -14, up: '1', down: '2' },
+  { dx: 0, up: '3', down: '4' }, { dx: 14, up: '5', down: '6' },
+];
+
+const gearControl = cockpit.querySelector('[data-control="gear"]');
+let leverDrag = null;
+
+function nearestGateColumn(dx) {
+  return GATE_COLUMNS.reduce((best, column) => (Math.abs(column.dx - dx) < Math.abs(best.dx - dx) ? column : best));
+}
+
+function constrainToGate(previous, start, delta) {
+  const dx = start.dx + delta.x;
+  const dy = start.dy + delta.y;
+  if (Math.abs(dy) < NEUTRAL_ROW_TOLERANCE) {
+    const rowDx = Math.min(GATE_MAX_DX, Math.max(GATE_MIN_DX, dx));
+    return { dx: rowDx, dy: 0, angle: rowDx * LEVER_TILT_PER_DX };
+  }
+  const column = nearestGateColumn(previous.dy === 0 ? dx : previous.dx);
+  const lowest = column.down ? GATE_ROW_DY : 0;
+  const columnDy = Math.min(lowest, Math.max(-GATE_ROW_DY, dy));
+  return { dx: column.dx, dy: columnDy, angle: column.dx * LEVER_TILT_PER_DX };
+}
+
+function gearFromPose(pose) {
+  if (Math.abs(pose.dy) < GATE_ENGAGE_DY) return 'N';
+  const column = nearestGateColumn(pose.dx);
+  return pose.dy < 0 ? column.up : column.down;
+}
+
+function svgUnitsPerPixel() {
+  return VIEWBOX_WIDTH / cockpit.getBoundingClientRect().width;
+}
+
+function snapLeverToGear() {
+  leverGear = game.car.gear;
+  animateLever([GEAR_POSE[game.car.gear]], GEAR_MOVE_MS);
+}
+
+function applyLeverResult(result) {
+  game = result.game;
+  if (result.outcome !== OUTCOME.ignored) {
+    const flashClass = FLASH_CLASS[result.outcome];
+    if (flashClass) flash(gearControl, flashClass);
+    render(game, { kind: result.outcome, control: 'gear' });
+  }
+  snapLeverToGear();
+}
+
+function checkNeutral(isTap) {
+  applyLeverResult(clickControl({ ...game, lastRepeated: undefined }, 'gear', actionContext()));
+  if (isTap && game.car.gear === 'N') GESTURES['gear-wiggle']();
+}
+
+function finishLeverDrag() {
+  const drag = leverDrag;
+  leverDrag = null;
+  cockpit.classList.remove('lever-dragging');
+  const isTap = drag.movedPx < TAP_TOLERANCE_PX;
+  const gear = isTap ? drag.startGear : gearFromPose(leverPose);
+  const isNeutralWiggle = drag.startGear === 'N' && gear === 'N';
+  if (isNeutralWiggle) return checkNeutral(isTap);
+  if (gear === drag.startGear) return snapLeverToGear();
+  applyLeverResult(selectGear(game, gear, actionContext()));
+}
+
+gearControl.addEventListener('pointerdown', event => {
+  leverAnimationId += 1;
+  leverDrag = { startX: event.clientX, startY: event.clientY, startPose: GEAR_POSE[game.car.gear], startGear: game.car.gear, movedPx: 0 };
+  leverPose = GEAR_POSE[game.car.gear];
+  cockpit.classList.add('lever-dragging');
+  capturePointer(gearControl, event.pointerId);
+});
+
+gearControl.addEventListener('pointermove', event => {
+  if (!leverDrag || event.buttons === 0) return;
+  const pixelsX = event.clientX - leverDrag.startX;
+  const pixelsY = event.clientY - leverDrag.startY;
+  leverDrag.movedPx = Math.max(leverDrag.movedPx, Math.hypot(pixelsX, pixelsY));
+  const scale = svgUnitsPerPixel() / GATE_SCALE;
+  leverPose = constrainToGate(leverPose, leverDrag.startPose, { x: pixelsX * scale, y: pixelsY * scale });
+  applyLeverPose(leverPose);
+});
+
+['pointerup', 'pointercancel'].forEach(type => gearControl.addEventListener(type, () => {
+  if (leverDrag) finishLeverDrag();
+}));
+
+let drivingFrameTime = null;
+
+function drivingFrame(now) {
+  const elapsedMs = drivingFrameTime === null ? 0 : Math.min(Math.max(now - drivingFrameTime, 0), 100);
+  drivingFrameTime = now;
+  const before = game;
+  game = advanceDriving(game, elapsedMs, actionContext());
+  const changed = game.doneSteps.length !== before.doneSteps.length || game.mistakes.length !== before.mistakes.length || game.notice !== before.notice;
+  if (changed) render(game, pedalFeedback(before, game) ?? { kind: OUTCOME.repeat });
+  if (!changed && game !== before) renderGauges(game);
+  requestAnimationFrame(drivingFrame);
+}
+
+requestAnimationFrame(drivingFrame);
+
+document.querySelectorAll('[data-mode]').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('[data-mode]').forEach(other => other.classList.toggle('active', other === button));
+    game = newGame(button.dataset.mode);
+    render(game, null);
+  });
+});
+
+document.getElementById('restart').addEventListener('click', () => {
+  game = newGame(game.mode);
+  render(game, null);
+});
+
+document.getElementById('toggle-labels').addEventListener('click', event => {
+  const isOn = cockpit.classList.toggle('labels');
+  event.currentTarget.classList.toggle('active', isOn);
+});
+
+DIALS.forEach(drawDial);
+renderClimate();
+applyLeverPose(leverPose);
+render(game, null);
+</script>
+</body>
+</html>
