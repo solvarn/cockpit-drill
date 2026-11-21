@@ -14,7 +14,7 @@
   button { background:#2d333b; color:var(--text); border:1px solid #444c56; border-radius:6px; padding:6px 12px; cursor:pointer; font:inherit; }
   button.active { background:var(--accent); color:#111; border-color:var(--accent); }
   main { max-width:1200px; margin:0 auto; padding:12px 16px; }
-  #status { min-height:70px; padding:10px 14px; border-radius:8px; background:var(--panel); margin-bottom:10px; }
+  #status { min-height:0; padding:8px 14px; border-radius:8px; background:var(--panel); margin-bottom:10px; }
   #status.wrong { box-shadow:inset 5px 0 var(--bad); }
   #status.right { box-shadow:inset 5px 0 var(--good); }
   #status-step { color:var(--muted); font-size:13px; }
@@ -49,9 +49,9 @@
     #status-prompt { font-size:16px; }
   }
   /* Phone held sideways: compact header, cockpit fills the remaining height, status floats over the left window. */
-  /* Phone held sideways: a dedicated layout. The cockpit shows one zoomed zone at a time (Road / Dash /
-     Console), and the controls you use constantly (gear lever, pedals) live in a fixed panel on the right. */
-  #zoneTabs, #phoneControls { display:none; }
+  /* Phone held sideways: the whole cockpit in one view (pinch to zoom), with the gear lever and pedals in a
+     fixed panel on the right because they are used constantly. */
+  #phoneControls, #zoomReset { display:none; }
   @media (orientation: landscape) and (max-height: 560px) {
     body { display:flex; flex-direction:row-reverse; height:100dvh; overflow:hidden; }
     header { flex-direction:column; align-items:stretch; justify-content:flex-start; flex-wrap:nowrap; gap:3px; padding:3px; width:58px; overflow-y:auto; }
@@ -60,13 +60,11 @@
     main { flex:1; min-width:0; height:100dvh; padding:0; max-width:none; }
     #drill-view, #cockpit-wrap { height:100%; }
     #cockpit-wrap { display:grid; grid-template-columns:minmax(0, 1fr) auto; grid-template-rows:auto minmax(0, 1fr); gap:3px; }
-    #status { grid-row:1; grid-column:1; min-height:0; margin:0; padding:3px 196px 3px 6px; border-radius:6px; }
+    #status { grid-row:1; grid-column:1; min-height:0; margin:0; padding:3px 90px 3px 6px; border-radius:6px; }
     #status-step { display:none; }
     #status-feedback { font-size:10px; min-height:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    #status-prompt { font-size:11px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-    #zoneTabs { display:flex; grid-row:1; grid-column:1; justify-self:end; align-self:center; gap:3px; margin-right:4px; }
-    #zoneTabs button { padding:4px 9px; font-size:11px; }
-    #zoneTabs button.active { background:var(--accent); color:#111; }
+    #status-prompt { font-size:12px; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
+    #zoomReset:not([hidden]) { display:block; grid-row:1; grid-column:1; justify-self:end; align-self:center; margin-right:4px; padding:4px 9px; font-size:11px; }
     #cockpit { grid-row:2; grid-column:1; width:100%; height:100%; min-height:0; border-radius:6px; }
     #phoneControls { display:flex; flex-direction:column; grid-row:1 / span 2; grid-column:2; height:100%; gap:4px; }
     #phoneGear { flex:none; height:42%; width:auto; aspect-ratio:240 / 200; touch-action:none; background:#1f2124; border-radius:8px; }
@@ -201,6 +199,7 @@
   <button data-mode="exam">Exam</button>
   <select id="conditions" aria-label="Conditions"><option value="day">Day</option><option value="night">Night</option><option value="rain">Rain</option></select>
   <button id="toggle-labels" class="active">Labels</button>
+  <button id="toggle-steps">Steps</button>
   <button id="toggle-sound" class="active">Sound</button>
   <button id="fullscreen" title="Full screen, landscape">Full screen</button>
   <button id="restart">Restart</button>
@@ -499,13 +498,13 @@
       <text x="600" y="460" font-size="72" font-weight="800" fill="#fff" text-anchor="middle" stroke="#b71c1c" stroke-width="3" paint-order="stroke">CRASH!</text>
     </g>
   </svg>
-  <div id="zoneTabs"><button data-zone="road">Road</button><button data-zone="dash">Dash</button><button data-zone="console">Console</button></div>
+  <button id="zoomReset" hidden>Zoom out</button>
   <div id="phoneControls">
     <svg id="phoneGear" viewBox="640 555 240 200" xmlns="http://www.w3.org/2000/svg" aria-label="Gear lever"><use href="#gateGuide"/><use id="phoneGearLever" href="#gear"/></svg>
     <svg id="pedalPanel" viewBox="0 0 212 200" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" aria-label="Pedals"><rect width="212" height="200" rx="10" fill="#141518"/><g id="phonePedalColumns"></g></svg>
   </div>
   </div>
-  <p class="pedal-help">Pedals: the % is how far the pedal is pushed in (clutch 100% = fully pressed, engine disconnected). Press and slide down to push the pedal in (it moves away from you), slide up to let it come back. A pedal stays where you leave it, so you can hold the clutch down and still use the key. The thin bar beside each pedal follows your finger and shows how far it is in.</p>
+  <p class="pedal-help">Pedals: drag down to press, up to release; they stay where you leave them. 100% = fully pressed.</p>
   <ol id="steps"></ol>
   </div>
 </main>
@@ -619,6 +618,7 @@ const mfdTop = document.getElementById('mfdTop');
 const mfdBottom = document.getElementById('mfdBottom');
 const statusBox = document.getElementById('status');
 const stepsList = document.getElementById('steps');
+const stepsButton = document.getElementById('toggle-steps');
 // Two pedal sets share one renderer: the footwell inside the cockpit, and a tall side panel used on phones.
 const PEDAL_LAYOUTS = {
   cockpit: { columns: { clutch: 172, brake: 342, gas: 512 }, top: 700, width: 160, height: 192, artWidth: 138, artHeight: 172, gaugeGap: 8, gaugeTop: 708, gaugeHeight: 156, labelClass: 'pedal-name' },
@@ -728,11 +728,6 @@ function primaryCandidates(game) {
   const nextRequired = firstPendingIndex(game);
   const blockers = candidates.filter(index => (PREREQUISITES[nextRequired] ?? []).includes(index));
   return blockers.length ? blockers : candidates;
-}
-
-function optionalCandidates(game) {
-  const primary = primaryCandidates(game);
-  return candidateIndexes(game).filter(index => !primary.includes(index));
 }
 
 function currentStepIndex(game) {
@@ -1204,10 +1199,9 @@ function finishStatus(game) {
 
 function learnPrompt(game) {
   const primary = primaryCandidates(game);
-  const texts = primary.map(index => STEPS[index].text).join(' · ');
-  const prompt = primary.length > 1 ? `${texts} (any order)` : texts;
-  const optional = optionalCandidates(game).map(index => STEPS[index].text);
-  return optional.length ? `${prompt}  (also possible now: ${optional.join(' · ')})` : prompt;
+  if (!primary.length) return '';
+  const others = primary.length - 1;
+  return others ? `${STEPS[primary[0]].text}  (+${others} more, any order)` : STEPS[primary[0]].text;
 }
 
 const STOP_HINT_DISTANCE_M = 60;
@@ -1249,10 +1243,20 @@ function statusFor(game, feedback) {
   };
 }
 
+const FEEDBACK_VISIBLE_MS = 3000;
+let feedbackTimer = null;
+
+function showFeedback(text, isPermanent) {
+  const line = document.getElementById('status-feedback');
+  line.textContent = text;
+  clearTimeout(feedbackTimer);
+  if (text && !isPermanent) feedbackTimer = setTimeout(() => { line.textContent = ''; }, FEEDBACK_VISIBLE_MS);
+}
+
 function renderStatus(game, feedback) {
   const status = statusFor(game, feedback);
   document.getElementById('status-step').textContent = status.step;
-  document.getElementById('status-feedback').textContent = status.feedback;
+  showFeedback(status.feedback, isFinished(game));
   document.getElementById('status-prompt').textContent = status.prompt;
   const tone = isFinished(game) && game.crash ? OUTCOME.wrong : feedback?.kind;
   statusBox.className = tone ?? '';
@@ -1269,8 +1273,12 @@ function stepItem(game, step, index) {
   return item;
 }
 
+let stepsWanted = false;
+
 function renderSteps(game) {
-  stepsList.hidden = game.mode === MODE.exam;
+  stepsList.hidden = game.mode === MODE.exam || !stepsWanted;
+  stepsButton.hidden = game.mode === MODE.exam;
+  stepsButton.classList.toggle('active', stepsWanted);
   stepsList.replaceChildren(...STEPS.map((step, index) => stepItem(game, step, index)));
 }
 
@@ -1363,14 +1371,9 @@ function renderCrash(game) {
   HAZARDS.forEach(hazard => cockpit.classList.toggle(`crash-${hazard}`, game.crash === hazard));
 }
 
-let lastDoneCount = 0;
-
 function render(game, feedback) {
   recordBestTime(game);
-  if (game.doneSteps.length !== lastDoneCount) zoneChosenByHand = false;
-  lastDoneCount = game.doneSteps.length;
   renderCar(game);
-  followZone(game);
   renderPedals(game);
   renderCrash(game);
   renderHint(game);
@@ -2067,49 +2070,113 @@ document.addEventListener('fullscreenchange', () => {
 fullscreenButton.hidden = !document.documentElement.requestFullscreen;
 
 const PHONE_LANDSCAPE = window.matchMedia('(orientation: landscape) and (max-height: 560px)');
-const FULL_VIEWBOX = '0 0 1200 900';
-const ZONES = { road: '0 0 1200 700', dash: '0 330 690 430', console: '540 330 660 430' };
-const CONTROL_ZONES = {
-  seat: 'dash', belt: 'dash', lights: 'dash', indicator: 'dash', wipers: 'dash', horn: 'dash', ignition: 'dash',
-  hazard: 'console', radio: 'console', climateTemp: 'console', climateFan: 'console', climateAc: 'console', glovebox: 'console', handbrake: 'console',
-  mirrorInterior: 'road', mirrorLeft: 'road', mirrorRight: 'road', shoulder: 'road',
-};
-let phoneZone = 'dash';
-let zoneChosenByHand = false;
+const FULL_VIEW = { x: 0, y: 0, w: 1200, h: 900 };
+// On phones the footwell pedals live in the side panel, so the base view stops above them.
+const PHONE_VIEW = { x: 0, y: 20, w: 1200, h: 730 };
+const MAX_ZOOM = 4;
+const DOUBLE_TAP_MS = 300;
+const CLICK_SUPPRESS_MS = 400;
+let view = { ...FULL_VIEW };
+
+function baseView() {
+  return PHONE_LANDSCAPE.matches ? PHONE_VIEW : FULL_VIEW;
+}
+
+function setView(next) {
+  view = next;
+  cockpit.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+  document.getElementById('zoomReset').hidden = view.w >= baseView().w;
+}
 
 function applyPhoneView() {
-  const isPhone = PHONE_LANDSCAPE.matches;
-  cockpit.setAttribute('viewBox', isPhone ? ZONES[phoneZone] : FULL_VIEWBOX);
-  cockpit.classList.toggle('phone-view', isPhone);
-  cockpit.setAttribute('preserveAspectRatio', isPhone ? 'xMidYMin meet' : 'xMidYMid meet');
-  document.querySelectorAll('#zoneTabs [data-zone]').forEach(button => button.classList.toggle('active', button.dataset.zone === phoneZone));
+  cockpit.classList.toggle('phone-view', PHONE_LANDSCAPE.matches);
+  setView({ ...baseView() });
 }
-
-function showZone(zone) {
-  if (zone === phoneZone) return;
-  phoneZone = zone;
-  applyPhoneView();
-}
-
-function zoneForGame(game) {
-  const hinted = game.mode === MODE.learn && !isFinished(game) ? primaryCandidates(game).map(index => CONTROL_ZONES[STEPS[index].control]).find(Boolean) : null;
-  if (hinted) return hinted;
-  return game.car.moving ? 'road' : null;
-}
-
-function followZone(game) {
-  if (!PHONE_LANDSCAPE.matches || zoneChosenByHand) return;
-  const zone = zoneForGame(game);
-  if (zone) showZone(zone);
-}
-
-document.querySelectorAll('#zoneTabs [data-zone]').forEach(button => button.addEventListener('click', () => {
-  zoneChosenByHand = true;
-  showZone(button.dataset.zone);
-}));
 
 PHONE_LANDSCAPE.addEventListener('change', applyPhoneView);
 applyPhoneView();
+
+// ---- pinch-zoom and two-finger pan on the cockpit; one finger keeps operating controls ----
+const touches = new Map();
+let pinch = null;
+let suppressClicksUntil = 0;
+let lastTapAt = 0;
+
+function meetGeometry(currentView) {
+  const box = cockpit.getBoundingClientRect();
+  const scale = Math.min(box.width / currentView.w, box.height / currentView.h);
+  return { box, scale, offsetX: (box.width - currentView.w * scale) / 2, offsetY: (box.height - currentView.h * scale) / 2 };
+}
+
+function toSvgPoint(clientX, clientY, currentView) {
+  const { box, scale, offsetX, offsetY } = meetGeometry(currentView);
+  return { x: currentView.x + (clientX - box.left - offsetX) / scale, y: currentView.y + (clientY - box.top - offsetY) / scale };
+}
+
+function clampView(candidate) {
+  const base = baseView();
+  const w = Math.min(base.w, Math.max(base.w / MAX_ZOOM, candidate.w));
+  const h = w * base.h / base.w;
+  const x = Math.min(base.x + base.w - w, Math.max(base.x, candidate.x));
+  const y = Math.min(base.y + base.h - h, Math.max(base.y, candidate.y));
+  return { x, y, w, h };
+}
+
+function touchMidpointAndDistance() {
+  const [a, b] = [...touches.values()];
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.hypot(a.x - b.x, a.y - b.y) };
+}
+
+function startPinch() {
+  const current = touchMidpointAndDistance();
+  pinch = { startView: { ...view }, startDistance: current.distance, anchor: toSvgPoint(current.x, current.y, view) };
+  if (leverDrag) {
+    leverDrag = null;
+    cockpit.classList.remove('lever-dragging');
+    snapLeverToGear();
+  }
+}
+
+function updatePinch() {
+  const current = touchMidpointAndDistance();
+  const w = pinch.startView.w * pinch.startDistance / Math.max(current.distance, 1);
+  const sized = clampView({ ...view, w });
+  const { box, scale, offsetX, offsetY } = meetGeometry(sized);
+  const x = pinch.anchor.x - (current.x - box.left - offsetX) / scale;
+  const y = pinch.anchor.y - (current.y - box.top - offsetY) / scale;
+  setView(clampView({ x, y, w: sized.w, h: sized.h }));
+}
+
+cockpit.addEventListener('pointerdown', event => {
+  if (event.pointerType !== 'touch') return;
+  touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (touches.size === 2) startPinch();
+}, true);
+
+cockpit.addEventListener('pointermove', event => {
+  if (!touches.has(event.pointerId)) return;
+  touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (pinch && touches.size === 2) updatePinch();
+}, true);
+
+function endTouch(event) {
+  if (!touches.delete(event.pointerId)) return;
+  if (pinch) suppressClicksUntil = performance.now() + CLICK_SUPPRESS_MS;
+  if (touches.size < 2) pinch = null;
+}
+
+['pointerup', 'pointercancel'].forEach(type => window.addEventListener(type, endTouch, true));
+
+// Double-tap on an empty part of the cockpit zooms back out (never on a control, so it can't do a step twice).
+cockpit.addEventListener('click', event => {
+  if (event.target.closest('.ctl')) return;
+  const now = performance.now();
+  const isDoubleTap = now - lastTapAt < DOUBLE_TAP_MS;
+  lastTapAt = now;
+  if (isDoubleTap) setView({ ...baseView() });
+});
+
+document.getElementById('zoomReset').addEventListener('click', () => setView({ ...baseView() }));
 
 let game = newGame(MODE.learn);
 
@@ -2125,6 +2192,7 @@ function randomItem(items) {
 }
 
 cockpit.addEventListener('click', event => {
+  if (performance.now() < suppressClicksUntil) return;
   const element = event.target.closest('.ctl');
   if (!element) return;
   const control = element.dataset.control;
@@ -2344,6 +2412,11 @@ document.querySelectorAll('[data-mode]').forEach(button => {
     applyLabelVisibility();
     render(game, null);
   });
+});
+
+stepsButton.addEventListener('click', () => {
+  stepsWanted = !stepsWanted;
+  renderSteps(game);
 });
 
 document.getElementById('restart').addEventListener('click', () => {
