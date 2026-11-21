@@ -144,6 +144,8 @@
   #cabin { transform-box:view-box; }
   svg.engine #cabin { animation:engine-shake .09s linear infinite; }
   svg.engine.moving #cabin { animation-duration:.07s; }
+  svg.engine.straining #cabin { animation:strain-shake .11s linear infinite; }
+  @keyframes strain-shake { 0% { transform:translate(0, 0); } 25% { transform:translate(2px, -2px); } 50% { transform:translate(-2px, 1.5px); } 75% { transform:translate(1.5px, 2px); } }
   @keyframes engine-shake { 0% { transform:translate(0, 0); } 25% { transform:translate(.6px, -.5px); } 50% { transform:translate(-.5px, .6px); } 75% { transform:translate(.5px, .5px); } }
   @media (prefers-reduced-motion: reduce) { svg.engine #cabin, svg.engine #tachJitter { animation:none; } }
   #road { transform-box:view-box; transform-origin:600px 180px; transition:transform 3s ease-in-out; }
@@ -951,8 +953,11 @@ function stoppedAtLine(game) {
 
 const BITE_REV_DIP = 0.28;
 
+const HANDBRAKE_EXTRA_DIP = 0.3;
+
 function stationaryRpm(game) {
-  const dip = game.car.gear === 'N' ? 0 : BITE_REV_DIP * clutchEngagement(game);
+  const dipPerEngagement = BITE_REV_DIP + (game.car.handbrake ? HANDBRAKE_EXTRA_DIP : 0);
+  const dip = game.car.gear === 'N' ? 0 : dipPerEngagement * clutchEngagement(game);
   return freeRevs(game) * (1 - dip);
 }
 
@@ -1862,6 +1867,25 @@ function updateWorld(game, seconds, now) {
   renderStopLine(game);
   renderTraffic(game);
   updatePitch(game, seconds);
+  updateStrain(game, now);
+}
+
+const STRAIN = { minEngagement: 0.15, pulseMs: 450, vibration: [35, 25, 35], notice: 'The car shudders and strains: the handbrake is still on!' };
+let lastStrainPulse = 0;
+
+function isStraining(game) {
+  return !game.car.moving && game.car.engine && game.car.gear !== 'N' && game.car.handbrake && clutchEngagement(game) > STRAIN.minEngagement;
+}
+
+function updateStrain(game, now) {
+  const straining = isStraining(game);
+  const startedStraining = straining && !cockpit.classList.contains('straining');
+  cockpit.classList.toggle('straining', straining);
+  if (startedStraining) document.getElementById('status-feedback').textContent = STRAIN.notice;
+  if (!straining || now - lastStrainPulse < STRAIN.pulseMs) return;
+  lastStrainPulse = now;
+  vibrate(STRAIN.vibration);
+  jolt(-1.5);
 }
 
 function resetWorld() {
