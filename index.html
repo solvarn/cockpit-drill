@@ -49,24 +49,28 @@
     #status-prompt { font-size:16px; }
   }
   /* Phone held sideways: compact header, cockpit fills the remaining height, status floats over the left window. */
-  /* Phone held sideways: every pixel of height goes to the cockpit. Buttons become a slim column on the
-     right, the instructions use the empty space on the left, nothing overlaps the controls. */
+  /* Phone held sideways: a dedicated layout. The cockpit shows one zoomed zone at a time (Road / Dash /
+     Console), and the controls you use constantly (gear lever, pedals) live in a fixed panel on the right. */
+  #zoneTabs, #phoneControls { display:none; }
   @media (orientation: landscape) and (max-height: 560px) {
     body { display:flex; flex-direction:row-reverse; height:100dvh; overflow:hidden; }
-    header { flex-direction:column; align-items:stretch; justify-content:flex-start; flex-wrap:nowrap; gap:4px; padding:4px; width:76px; overflow-y:auto; }
+    header { flex-direction:column; align-items:stretch; justify-content:flex-start; flex-wrap:nowrap; gap:3px; padding:3px; width:58px; overflow-y:auto; }
     header h1 { display:none; }
-    header button, header select { padding:4px 2px; font-size:11px; width:100%; }
+    header button, header select { padding:3px 1px; font-size:10px; width:100%; }
     main { flex:1; min-width:0; height:100dvh; padding:0; max-width:none; }
     #drill-view, #cockpit-wrap { height:100%; }
-    #cockpit-wrap { display:flex; align-items:stretch; }
-    #cockpit-wrap { position:relative; justify-content:center; gap:4px; }
-    #status { position:absolute; top:2px; left:2px; z-index:3; width:34%; min-height:0; max-height:34%; margin:0; padding:4px 6px; overflow:hidden; background:rgba(20,22,26,.82); pointer-events:none; }
-    #status-step { font-size:9px; }
-    #status-feedback { font-size:10px; min-height:0; }
-    #status-prompt { font-size:12px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-    #cockpit { flex:none; align-self:center; aspect-ratio:1200 / 730; height:auto; border-radius:0;
-      width:min(calc(100dvh * 1200 / 730), calc(100vw - 76px - 100dvh * 212 / 360 - 8px)); }
-    #cockpit-wrap #pedalPanel { display:block; flex:none; height:100%; width:auto; aspect-ratio:212 / 360; }
+    #cockpit-wrap { display:grid; grid-template-columns:minmax(0, 1fr) auto; grid-template-rows:auto minmax(0, 1fr); gap:3px; }
+    #status { grid-row:1; grid-column:1; min-height:0; margin:0; padding:3px 196px 3px 6px; border-radius:6px; }
+    #status-step { display:none; }
+    #status-feedback { font-size:10px; min-height:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #status-prompt { font-size:11px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    #zoneTabs { display:flex; grid-row:1; grid-column:1; justify-self:end; align-self:center; gap:3px; margin-right:4px; }
+    #zoneTabs button { padding:4px 9px; font-size:11px; }
+    #zoneTabs button.active { background:var(--accent); color:#111; }
+    #cockpit { grid-row:2; grid-column:1; width:100%; height:100%; min-height:0; border-radius:6px; }
+    #phoneControls { display:flex; flex-direction:column; grid-row:1 / span 2; grid-column:2; height:100%; gap:4px; }
+    #phoneGear { flex:none; height:42%; width:auto; aspect-ratio:240 / 200; touch-action:none; background:#1f2124; border-radius:8px; }
+    #cockpit-wrap #pedalPanel { display:block; flex:1; min-height:0; width:100%; height:auto; }
     .pedal-help, #steps, .rotate-hint { display:none; }
   }
   .ctl { cursor:pointer; }
@@ -495,7 +499,11 @@
       <text x="600" y="460" font-size="72" font-weight="800" fill="#fff" text-anchor="middle" stroke="#b71c1c" stroke-width="3" paint-order="stroke">CRASH!</text>
     </g>
   </svg>
-  <svg id="pedalPanel" viewBox="0 0 212 360" xmlns="http://www.w3.org/2000/svg" aria-label="Pedals"><rect width="212" height="360" rx="10" fill="#141518"/><g id="phonePedalColumns"></g></svg>
+  <div id="zoneTabs"><button data-zone="road">Road</button><button data-zone="dash">Dash</button><button data-zone="console">Console</button></div>
+  <div id="phoneControls">
+    <svg id="phoneGear" viewBox="640 555 240 200" xmlns="http://www.w3.org/2000/svg" aria-label="Gear lever"><use href="#gateGuide"/><use id="phoneGearLever" href="#gear"/></svg>
+    <svg id="pedalPanel" viewBox="0 0 212 200" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" aria-label="Pedals"><rect width="212" height="200" rx="10" fill="#141518"/><g id="phonePedalColumns"></g></svg>
+  </div>
   </div>
   <p class="pedal-help">Pedals: the % is how far the pedal is pushed in (clutch 100% = fully pressed, engine disconnected). Press and slide down to push the pedal in (it moves away from you), slide up to let it come back. A pedal stays where you leave it, so you can hold the clutch down and still use the key. The thin bar beside each pedal follows your finger and shows how far it is in.</p>
   <ol id="steps"></ol>
@@ -614,7 +622,7 @@ const stepsList = document.getElementById('steps');
 // Two pedal sets share one renderer: the footwell inside the cockpit, and a tall side panel used on phones.
 const PEDAL_LAYOUTS = {
   cockpit: { columns: { clutch: 172, brake: 342, gas: 512 }, top: 700, width: 160, height: 192, artWidth: 138, artHeight: 172, gaugeGap: 8, gaugeTop: 708, gaugeHeight: 156, labelClass: 'pedal-name' },
-  phone: { columns: { clutch: 2, brake: 72, gas: 142 }, top: 4, width: 68, height: 352, artWidth: 54, artHeight: 300, gaugeGap: 2, gaugeTop: 14, gaugeHeight: 290, labelClass: 'pedal-name pedal-name-small' },
+  phone: { columns: { clutch: 2, brake: 72, gas: 142 }, top: 2, width: 68, height: 192, artWidth: 60, artHeight: 172, gaugeGap: 1, gaugeTop: 8, gaugeHeight: 160, labelClass: 'pedal-name pedal-name-small' },
 };
 const PEDAL_LABELS = { clutch: 'Clutch', brake: 'Brake', gas: 'Gas' };
 const PEDAL_SHAPES = {
@@ -1355,9 +1363,14 @@ function renderCrash(game) {
   HAZARDS.forEach(hazard => cockpit.classList.toggle(`crash-${hazard}`, game.crash === hazard));
 }
 
+let lastDoneCount = 0;
+
 function render(game, feedback) {
   recordBestTime(game);
+  if (game.doneSteps.length !== lastDoneCount) zoneChosenByHand = false;
+  lastDoneCount = game.doneSteps.length;
   renderCar(game);
+  followZone(game);
   renderPedals(game);
   renderCrash(game);
   renderHint(game);
@@ -2054,12 +2067,46 @@ document.addEventListener('fullscreenchange', () => {
 fullscreenButton.hidden = !document.documentElement.requestFullscreen;
 
 const PHONE_LANDSCAPE = window.matchMedia('(orientation: landscape) and (max-height: 560px)');
-const VIEWBOX = { full: '0 0 1200 900', phone: '0 20 1200 730' };
+const FULL_VIEWBOX = '0 0 1200 900';
+const ZONES = { road: '0 0 1200 700', dash: '0 330 690 430', console: '540 330 660 430' };
+const CONTROL_ZONES = {
+  seat: 'dash', belt: 'dash', lights: 'dash', indicator: 'dash', wipers: 'dash', horn: 'dash', ignition: 'dash',
+  hazard: 'console', radio: 'console', climateTemp: 'console', climateFan: 'console', climateAc: 'console', glovebox: 'console', handbrake: 'console',
+  mirrorInterior: 'road', mirrorLeft: 'road', mirrorRight: 'road', shoulder: 'road',
+};
+let phoneZone = 'dash';
+let zoneChosenByHand = false;
 
 function applyPhoneView() {
-  cockpit.setAttribute('viewBox', PHONE_LANDSCAPE.matches ? VIEWBOX.phone : VIEWBOX.full);
-  cockpit.classList.toggle('phone-view', PHONE_LANDSCAPE.matches);
+  const isPhone = PHONE_LANDSCAPE.matches;
+  cockpit.setAttribute('viewBox', isPhone ? ZONES[phoneZone] : FULL_VIEWBOX);
+  cockpit.classList.toggle('phone-view', isPhone);
+  cockpit.setAttribute('preserveAspectRatio', isPhone ? 'xMidYMin meet' : 'xMidYMid meet');
+  document.querySelectorAll('#zoneTabs [data-zone]').forEach(button => button.classList.toggle('active', button.dataset.zone === phoneZone));
 }
+
+function showZone(zone) {
+  if (zone === phoneZone) return;
+  phoneZone = zone;
+  applyPhoneView();
+}
+
+function zoneForGame(game) {
+  const hinted = game.mode === MODE.learn && !isFinished(game) ? primaryCandidates(game).map(index => CONTROL_ZONES[STEPS[index].control]).find(Boolean) : null;
+  if (hinted) return hinted;
+  return game.car.moving ? 'road' : null;
+}
+
+function followZone(game) {
+  if (!PHONE_LANDSCAPE.matches || zoneChosenByHand) return;
+  const zone = zoneForGame(game);
+  if (zone) showZone(zone);
+}
+
+document.querySelectorAll('#zoneTabs [data-zone]').forEach(button => button.addEventListener('click', () => {
+  zoneChosenByHand = true;
+  showZone(button.dataset.zone);
+}));
 
 PHONE_LANDSCAPE.addEventListener('change', applyPhoneView);
 applyPhoneView();
@@ -2154,6 +2201,7 @@ pedalTracks.forEach(track => {
 
 // ---- gear lever: drag the knob through the H-gate (no menu) ----
 const GATE_SCALE = 5;
+const PHONE_GATE_SCALE = 1.4;
 const GATE_ROW_DY = 12;
 const GATE_ENGAGE_DY = 8;
 const NEUTRAL_ROW_TOLERANCE = 4;
@@ -2161,7 +2209,6 @@ const GATE_MIN_DX = -26;
 const GATE_MAX_DX = 14;
 const LEVER_TILT_PER_DX = 0.7;
 const TAP_TOLERANCE_PX = 6;
-const VIEWBOX_WIDTH = 1200;
 const GATE_COLUMNS = [
   { dx: -26, up: 'R', down: null }, { dx: -14, up: '1', down: '2' },
   { dx: 0, up: '3', down: '4' }, { dx: 14, up: '5', down: '6' },
@@ -2204,9 +2251,6 @@ function gearFromPose(pose) {
   return pose.dy < 0 ? column.up : column.down;
 }
 
-function svgUnitsPerPixel() {
-  return VIEWBOX_WIDTH / cockpit.getBoundingClientRect().width;
-}
 
 function snapLeverToGear() {
   leverGear = game.car.gear;
@@ -2240,13 +2284,25 @@ function finishLeverDrag() {
   applyLeverResult(selectGear(game, gear, actionContext()));
 }
 
-gearControl.addEventListener('pointerdown', event => {
+function unitsPerPixel(svg) {
+  return svg.viewBox.baseVal.width / svg.getBoundingClientRect().width;
+}
+
+function startLeverDrag(event, element) {
   leverAnimationId += 1;
-  leverDrag = { startX: event.clientX, startY: event.clientY, startPose: GEAR_POSE[game.car.gear], startGear: game.car.gear, movedPx: 0 };
+  leverDrag = {
+    startX: event.clientX, startY: event.clientY, startPose: GEAR_POSE[game.car.gear], startGear: game.car.gear,
+    movedPx: 0, unitsPerPixel: unitsPerPixel(element.ownerSVGElement ?? element.closest('svg')),
+    gateScale: element === gearControl ? GATE_SCALE : PHONE_GATE_SCALE,
+  };
   leverPose = GEAR_POSE[game.car.gear];
   cockpit.classList.add('lever-dragging');
-  capturePointer(gearControl, event.pointerId);
-});
+  capturePointer(element, event.pointerId);
+}
+
+gearControl.addEventListener('pointerdown', event => startLeverDrag(event, gearControl));
+const phoneGearLever = document.getElementById('phoneGearLever');
+phoneGearLever.addEventListener('pointerdown', event => startLeverDrag(event, phoneGearLever));
 
 // Listen on the window: the finger often leaves the small knob while dragging, and the release must always end the drag.
 window.addEventListener('pointermove', event => {
@@ -2255,7 +2311,7 @@ window.addEventListener('pointermove', event => {
   const pixelsX = event.clientX - leverDrag.startX;
   const pixelsY = event.clientY - leverDrag.startY;
   leverDrag.movedPx = Math.max(leverDrag.movedPx, Math.hypot(pixelsX, pixelsY));
-  const scale = svgUnitsPerPixel() / GATE_SCALE;
+  const scale = leverDrag.unitsPerPixel / leverDrag.gateScale;
   leverPose = constrainToGate(leverPose, leverDrag.startPose, { x: pixelsX * scale, y: pixelsY * scale });
   applyLeverPose(leverPose);
 });
