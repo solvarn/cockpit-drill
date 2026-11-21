@@ -25,6 +25,8 @@
   svg.lever-dragging #gear { cursor:grabbing; }
   #gateGuide { display:none; pointer-events:none; }
   svg.lever-dragging #gateGuide { display:inline; }
+  .gate-reverse { fill:#ef5350; }
+  .gate-note { font-size:11px; fill:#ef5350; text-anchor:middle; }
   .gate-label { font-size:16px; font-weight:700; fill:#ffd54a; text-anchor:middle; dominant-baseline:middle; }
   .pedal-help { color:var(--muted); text-align:center; font-size:13px; }
   #steps { columns:2 320px; padding-left:28px; color:var(--muted); }
@@ -327,15 +329,17 @@
         <g id="gearKnob">
           <rect x="776" y="673" width="28" height="8" rx="3" fill="url(#chrome)"/>
           <rect x="762" y="620" width="56" height="55" rx="18" fill="#1f2124" stroke="url(#chrome)" stroke-width="3"/>
-          <text class="knob-text" x="770" y="635">R</text><text class="knob-text" x="783" y="635">1</text>
+          <text class="knob-text" x="770" y="635" fill="#ef5350">R</text><text class="knob-text" x="783" y="635">1</text>
           <text class="knob-text" x="796" y="635">3</text><text class="knob-text" x="809" y="635">5</text>
           <path d="M770 639 V651 M783 639 V663 M796 639 V663 M809 639 V663 M770 651 H809" stroke="#e8eaed" stroke-width="1.4"/>
           <text class="knob-text" x="783" y="672">2</text><text class="knob-text" x="796" y="672">4</text><text class="knob-text" x="809" y="672">6</text>
         </g>
       </g>
       <g id="gateGuide">
-        <path d="M660 647 H860 M660 647 V587 M720 587 V707 M790 587 V707 M860 587 V707" stroke="#ffd54a" stroke-width="3" stroke-dasharray="6 6" fill="none" opacity=".7"/>
-        <text class="gate-label" x="660" y="572">R</text><text class="gate-label" x="720" y="572">1</text><text class="gate-label" x="790" y="572">3</text><text class="gate-label" x="860" y="572">5</text>
+        <path d="M660 647 H720 M660 647 V587" stroke="#ef5350" stroke-width="3" stroke-dasharray="6 6" fill="none" opacity=".85"/>
+        <path d="M712 637 V657" stroke="#ef5350" stroke-width="4"/>
+        <path d="M720 647 H860 M720 587 V707 M790 587 V707 M860 587 V707" stroke="#ffd54a" stroke-width="3" stroke-dasharray="6 6" fill="none" opacity=".7"/>
+        <text class="gate-label gate-reverse" x="660" y="572">R</text><text class="gate-note" x="660" y="668">push past the stop</text><text class="gate-label" x="720" y="572">1</text><text class="gate-label" x="790" y="572">3</text><text class="gate-label" x="860" y="572">5</text>
         <text class="gate-label" x="720" y="724">2</text><text class="gate-label" x="790" y="724">4</text><text class="gate-label" x="860" y="724">6</text>
         <text class="gate-label" x="884" y="647">N</text>
       </g>
@@ -783,6 +787,8 @@ function selectGear(game, gear, context) {
   const started = { ...game, startedAt: game.startedAt ?? context.now, notice: null, lastRepeated: undefined };
   const needsClutch = gear !== 'N' && started.pedals.clutch < 90;
   if (needsClutch) return { game: withMistake(started, 'Crunch! Clutch fully down before you change gear.'), outcome: OUTCOME.wrong };
+  const reverseWhileRolling = gear === 'R' && started.speed > STOPPED_KMH;
+  if (reverseWhileRolling) return { game: withMistake(started, 'Crunch! Never select reverse while the car is rolling forward.'), outcome: OUTCOME.wrong };
   const shifted = { ...started, car: { ...started.car, gear } };
   const matched = candidateIndexes(shifted).find(index => STEPS[index].shift === gear);
   if (matched === undefined) return { game: { ...shifted, notice: `Lever in ${gear}.` }, outcome: OUTCOME.repeat };
@@ -2120,14 +2126,25 @@ function nearestGateColumn(dx) {
   return GATE_COLUMNS.reduce((best, column) => (Math.abs(column.dx - dx) < Math.abs(best.dx - dx) ? column : best));
 }
 
+// Like the real car's reverse lockout: the lever stops at the 1/2 plane, and only a deliberate
+// extra push to the left gets it over into the R plane.
+const FIRST_PLANE_DX = -14;
+const REVERSE_LOCKOUT_EXTRA = 12;
+
+function withReverseLockout(dx) {
+  if (dx >= FIRST_PLANE_DX) return dx;
+  const pastStop = FIRST_PLANE_DX - dx;
+  return pastStop < REVERSE_LOCKOUT_EXTRA ? FIRST_PLANE_DX : dx + REVERSE_LOCKOUT_EXTRA;
+}
+
 function constrainToGate(previous, start, delta) {
   const dx = start.dx + delta.x;
   const dy = start.dy + delta.y;
   if (Math.abs(dy) < NEUTRAL_ROW_TOLERANCE) {
-    const rowDx = Math.min(GATE_MAX_DX, Math.max(GATE_MIN_DX, dx));
+    const rowDx = Math.min(GATE_MAX_DX, Math.max(GATE_MIN_DX, withReverseLockout(dx)));
     return { dx: rowDx, dy: 0, angle: rowDx * LEVER_TILT_PER_DX };
   }
-  const column = nearestGateColumn(previous.dy === 0 ? dx : previous.dx);
+  const column = nearestGateColumn(previous.dy === 0 ? withReverseLockout(dx) : previous.dx);
   const lowest = column.down ? GATE_ROW_DY : 0;
   const columnDy = Math.min(lowest, Math.max(-GATE_ROW_DY, dy));
   return { dx: column.dx, dy: columnDy, angle: column.dx * LEVER_TILT_PER_DX };
