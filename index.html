@@ -59,11 +59,14 @@
     main { flex:1; min-width:0; height:100dvh; padding:0; max-width:none; }
     #drill-view, #cockpit-wrap { height:100%; }
     #cockpit-wrap { display:flex; align-items:stretch; }
-    #status { flex:1; min-width:0; min-height:0; margin:0; border-radius:0; padding:6px 8px; overflow-y:auto; }
-    #status-step { font-size:10px; }
-    #status-feedback { font-size:11px; min-height:0; }
-    #status-prompt { font-size:13px; }
-    #cockpit { flex:none; height:100%; width:auto; aspect-ratio:4 / 3; border-radius:0; }
+    #cockpit-wrap { position:relative; justify-content:center; gap:4px; }
+    #status { position:absolute; top:2px; left:2px; z-index:3; width:34%; min-height:0; max-height:34%; margin:0; padding:4px 6px; overflow:hidden; background:rgba(20,22,26,.82); pointer-events:none; }
+    #status-step { font-size:9px; }
+    #status-feedback { font-size:10px; min-height:0; }
+    #status-prompt { font-size:12px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    #cockpit { flex:none; align-self:center; aspect-ratio:1200 / 730; height:auto; border-radius:0;
+      width:min(calc(100dvh * 1200 / 730), calc(100vw - 76px - 100dvh * 212 / 360 - 8px)); }
+    #cockpit-wrap #pedalPanel { display:block; flex:none; height:100%; width:auto; aspect-ratio:212 / 360; }
     .pedal-help, #steps, .rotate-hint { display:none; }
   }
   .ctl { cursor:pointer; }
@@ -133,6 +136,9 @@
   svg.handbrake .hb-lever { transform:none; }
 
   .pedal-track { cursor:ns-resize; touch-action:none; }
+  #pedalPanel { display:none; touch-action:none; user-select:none; }
+  .pedal-name.pedal-name-small { font-size:10px; }
+  #cockpit.phone-view #pedalColumns { display:none; }
   .pedal-move { transform-box:view-box; transform-origin:50px 200px; }
   .pedal-name { font-size:15px; fill:#e8eaed; text-anchor:middle; pointer-events:none; font-weight:600; }
   .hazard-sprite { display:none; }
@@ -489,6 +495,7 @@
       <text x="600" y="460" font-size="72" font-weight="800" fill="#fff" text-anchor="middle" stroke="#b71c1c" stroke-width="3" paint-order="stroke">CRASH!</text>
     </g>
   </svg>
+  <svg id="pedalPanel" viewBox="0 0 212 360" xmlns="http://www.w3.org/2000/svg" aria-label="Pedals"><rect width="212" height="360" rx="10" fill="#141518"/><g id="phonePedalColumns"></g></svg>
   </div>
   <p class="pedal-help">Pedals: the % is how far the pedal is pushed in (clutch 100% = fully pressed, engine disconnected). Press and slide down to push the pedal in (it moves away from you), slide up to let it come back. A pedal stays where you leave it, so you can hold the clutch down and still use the key. The thin bar beside each pedal follows your finger and shows how far it is in.</p>
   <ol id="steps"></ol>
@@ -604,8 +611,11 @@ const mfdTop = document.getElementById('mfdTop');
 const mfdBottom = document.getElementById('mfdBottom');
 const statusBox = document.getElementById('status');
 const stepsList = document.getElementById('steps');
-const PEDAL_COLUMNS = { clutch: 172, brake: 342, gas: 512 };
-const PEDAL_COLUMN = { top: 700, width: 160, artWidth: 138, artHeight: 172, gaugeTop: 708, gaugeHeight: 156 };
+// Two pedal sets share one renderer: the footwell inside the cockpit, and a tall side panel used on phones.
+const PEDAL_LAYOUTS = {
+  cockpit: { columns: { clutch: 172, brake: 342, gas: 512 }, top: 700, width: 160, height: 192, artWidth: 138, artHeight: 172, gaugeGap: 8, gaugeTop: 708, gaugeHeight: 156, labelClass: 'pedal-name' },
+  phone: { columns: { clutch: 2, brake: 72, gas: 142 }, top: 4, width: 68, height: 352, artWidth: 54, artHeight: 300, gaugeGap: 2, gaugeTop: 14, gaugeHeight: 290, labelClass: 'pedal-name pedal-name-small' },
+};
 const PEDAL_LABELS = { clutch: 'Clutch', brake: 'Brake', gas: 'Gas' };
 const PEDAL_SHAPES = {
   clutch: { padX: 10, padWidth: 80, padTop: 92, padHeight: 66, ribs: 'horizontal' },
@@ -1128,10 +1138,10 @@ const GESTURES = {
   'engine-start': kickTachOnStart,
 };
 
-function hintElement(step) {
-  if (step.shift) return cockpit.querySelector('[data-control="gear"]');
-  if (step.pedal) return document.querySelector(`.pedal-track[data-pedal="${step.pedal}"]`);
-  return cockpit.querySelector(`[data-control="${step.control}"]`);
+function hintElements(step) {
+  if (step.shift) return [cockpit.querySelector('[data-control="gear"]')];
+  if (step.pedal) return [...document.querySelectorAll(`.pedal-track[data-pedal="${step.pedal}"]`)];
+  return [cockpit.querySelector(`[data-control="${step.control}"]`)];
 }
 
 function renderHint(game) {
@@ -1139,7 +1149,7 @@ function renderHint(game) {
   pedalTracks.forEach(track => track.classList.remove('hint'));
   if (game.mode !== MODE.learn || isFinished(game)) return;
   const isTooEarly = step => step.goal === 'stopAtLine' && !isStopLineClose(game);
-  primaryCandidates(game).filter(index => !isTooEarly(STEPS[index])).forEach(index => hintElement(STEPS[index]).classList.add('hint'));
+  primaryCandidates(game).filter(index => !isTooEarly(STEPS[index])).forEach(index => hintElements(STEPS[index]).forEach(element => element.classList.add('hint')));
 }
 
 function feedbackText(game, feedback) {
@@ -1267,11 +1277,11 @@ function padRibs(shape) {
   return ys.map(y => `M${padX + inset} ${y} H${padX + padWidth - inset}`).join(' ');
 }
 
-function pedalArt(pedal, x) {
+function pedalArt(pedal, x, layout) {
   const shape = PEDAL_SHAPES[pedal];
   const { padX, padWidth, padTop, padHeight } = shape;
   const centerX = padX + padWidth / 2;
-  return `<svg class="pedal-art" x="${x}" y="${PEDAL_COLUMN.top}" width="${PEDAL_COLUMN.artWidth}" height="${PEDAL_COLUMN.artHeight}" viewBox="0 0 100 200" preserveAspectRatio="xMidYMid meet">
+  return `<svg class="pedal-art" x="${x}" y="${layout.top}" width="${layout.artWidth}" height="${layout.artHeight}" viewBox="0 0 100 200" preserveAspectRatio="xMidYMid meet">
     <path d="M10 196 Q50 186 90 196" stroke="#2a2c30" stroke-width="3" fill="none"/>
     <g class="pedal-move">
       <path d="M50 0 Q50 ${padTop * 0.55} ${centerX} ${padTop + 6}" stroke="#2b2e33" stroke-width="11" fill="none" stroke-linecap="round"/>
@@ -1297,45 +1307,47 @@ function pedalTransform(depth, travel) {
   return `translateY(${drop}px) scale(${width}, ${height})`;
 }
 
-function pedalColumn(pedal) {
-  const x = PEDAL_COLUMNS[pedal];
-  const gaugeX = x + PEDAL_COLUMN.artWidth + 8;
-  const { top, width, gaugeTop, gaugeHeight } = PEDAL_COLUMN;
-  return `<g class="pedal-track" data-pedal="${pedal}">
-    <rect class="pedal-hit" x="${x}" y="${top}" width="${width}" height="192" fill="transparent"/>
-    ${pedalArt(pedal, x)}
+function pedalColumn(pedal, layoutName) {
+  const layout = PEDAL_LAYOUTS[layoutName];
+  const x = layout.columns[pedal];
+  const gaugeX = x + layout.artWidth + layout.gaugeGap;
+  const { top, width, height, gaugeTop, gaugeHeight } = layout;
+  return `<g class="pedal-track" data-pedal="${pedal}" data-layout="${layoutName}">
+    <rect class="pedal-hit" x="${x}" y="${top}" width="${width}" height="${height}" fill="transparent"/>
+    ${pedalArt(pedal, x, layout)}
     <rect x="${gaugeX}" y="${gaugeTop}" width="8" height="${gaugeHeight}" rx="4" fill="#2a2c30"/>
     <rect class="target-band" x="${gaugeX - 3}" width="14" fill="rgba(255,213,74,.35)" stroke="#ffd54a" stroke-width="2" visibility="hidden"/>
     <rect class="fill" x="${gaugeX}" width="8" rx="4" fill="#d5d9de"/>
-    <text class="pedal-name" x="${x + PEDAL_COLUMN.artWidth / 2}" y="${top + 192}">${PEDAL_LABELS[pedal]} <tspan class="pedal-value"></tspan></text>
+    <text class="${layout.labelClass}" x="${x + layout.artWidth / 2}" y="${top + height}">${PEDAL_LABELS[pedal]} <tspan class="pedal-value"></tspan></text>
   </g>`;
 }
 
-document.getElementById('pedalColumns').innerHTML = Object.keys(PEDAL_COLUMNS).map(pedalColumn).join('');
-const pedalTracks = [...cockpit.querySelectorAll('.pedal-track')];
+document.getElementById('pedalColumns').innerHTML = PEDALS.map(pedal => pedalColumn(pedal, 'cockpit')).join('');
+document.getElementById('phonePedalColumns').innerHTML = PEDALS.map(pedal => pedalColumn(pedal, 'phone')).join('');
+const pedalTracks = [...document.querySelectorAll('.pedal-track')];
 
-function renderTargetBand(band, range) {
+function renderTargetBand(band, range, layout) {
   band.setAttribute('visibility', range ? 'visible' : 'hidden');
   if (!range) return;
-  const bandHeight = PEDAL_COLUMN.gaugeHeight * Math.max(range[1] - range[0], 2) / PERCENT;
+  const bandHeight = layout.gaugeHeight * Math.max(range[1] - range[0], 2) / PERCENT;
   band.setAttribute('height', bandHeight);
-  band.setAttribute('y', PEDAL_COLUMN.gaugeTop + PEDAL_COLUMN.gaugeHeight * range[0] / PERCENT);
+  band.setAttribute('y', layout.gaugeTop + layout.gaugeHeight * range[0] / PERCENT);
 }
 
 function renderPedals(game) {
   const bandSteps = game.mode === MODE.learn ? primaryCandidates(game).map(index => STEPS[index]).filter(step => typeof step.goal === 'object') : [];
   pedalTracks.forEach(track => {
     const pedal = track.dataset.pedal;
+    const layout = PEDAL_LAYOUTS[track.dataset.layout];
     const depth = Math.round(game.pedals[pedal]);
-    const fillHeight = PEDAL_COLUMN.gaugeHeight * depth / PERCENT;
     const fill = track.querySelector('.fill');
-    fill.setAttribute('height', fillHeight);
-    fill.setAttribute('y', PEDAL_COLUMN.gaugeTop);
+    fill.setAttribute('height', layout.gaugeHeight * depth / PERCENT);
+    fill.setAttribute('y', layout.gaugeTop);
     track.querySelector('.pedal-move').style.transform = pedalTransform(depth, PEDAL_TRAVEL);
     track.querySelector('.pedal-foot').setAttribute('opacity', depth > 1 ? 0.92 : 0);
     track.querySelector('.pedal-value').textContent = `${depth}%`;
     const range = bandSteps.map(step => step.goal[pedal]).find(Boolean);
-    renderTargetBand(track.querySelector('.target-band'), range);
+    renderTargetBand(track.querySelector('.target-band'), range, layout);
   });
 }
 
@@ -2040,6 +2052,17 @@ document.addEventListener('fullscreenchange', () => {
   fullscreenButton.textContent = document.fullscreenElement ? 'Exit full' : 'Full screen';
 });
 fullscreenButton.hidden = !document.documentElement.requestFullscreen;
+
+const PHONE_LANDSCAPE = window.matchMedia('(orientation: landscape) and (max-height: 560px)');
+const VIEWBOX = { full: '0 0 1200 900', phone: '0 20 1200 730' };
+
+function applyPhoneView() {
+  cockpit.setAttribute('viewBox', PHONE_LANDSCAPE.matches ? VIEWBOX.phone : VIEWBOX.full);
+  cockpit.classList.toggle('phone-view', PHONE_LANDSCAPE.matches);
+}
+
+PHONE_LANDSCAPE.addEventListener('change', applyPhoneView);
+applyPhoneView();
 
 let game = newGame(MODE.learn);
 
