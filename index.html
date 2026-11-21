@@ -64,9 +64,17 @@
     #status-feedback { font-size:10px; min-height:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     #status-prompt { font-size:12px; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
     #zoomReset:not([hidden]) { display:block; grid-row:1; grid-column:1; justify-self:end; align-self:center; margin-right:4px; padding:4px 9px; font-size:11px; }
-    /* Stretched sideways a little (up to 1.35x) to use the wide screen; the SVG is set to non-uniform scaling here. */
-    #cockpit { grid-row:2; grid-column:1; justify-self:center; height:100%; min-height:0; border-radius:6px;
-      width:min(100%, calc((100dvh - 36px) * 1200 / 900 * 1.35)); }
+    /* Fills the whole area with true proportions: the view is widened to the screen shape, showing more of the doors. */
+    #cockpit { grid-row:2; grid-column:1; width:100%; height:100%; min-height:0; border-radius:6px; }
+    /* Full screen: the cockpit takes the entire screen. Instructions float small at the top left,
+       and only the exit button stays visible. */
+    html:fullscreen header { position:fixed; top:4px; right:4px; z-index:6; width:auto; padding:0; background:transparent; overflow:visible; }
+    html:fullscreen header > :not(#fullscreen) { display:none; }
+    html:fullscreen header #fullscreen { width:auto; padding:4px 8px; opacity:.75; }
+    html:fullscreen #cockpit-wrap { grid-template-rows:minmax(0, 1fr); }
+    html:fullscreen #cockpit { grid-row:1; border-radius:0; }
+    html:fullscreen #status { grid-row:1; align-self:start; justify-self:start; z-index:5; max-width:45%; margin:4px; padding:3px 8px; background:rgba(20,22,26,.72); pointer-events:none; }
+    html:fullscreen #zoomReset:not([hidden]) { grid-row:1; align-self:start; z-index:5; margin:4px 90px 0 0; }
     .pedal-help, #steps, .rotate-hint { display:none; }
   }
   .ctl { cursor:pointer; }
@@ -210,7 +218,7 @@
   </div>
   <svg id="cockpit" class="labels" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
     <defs>
-      <clipPath id="sceneClip"><rect x="0" y="0" width="1200" height="900"/></clipPath>
+      <clipPath id="sceneClip"><rect x="-1000" y="0" width="3200" height="900"/></clipPath>
       <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#6fa8dc"/><stop offset="1" stop-color="#cfe2f3"/>
       </linearGradient>
@@ -228,12 +236,12 @@
         <stop offset="0" stop-color="#26282c"/><stop offset="1" stop-color="#1b1d20"/>
       </linearGradient>
     </defs>
-    <rect x="0" y="0" width="1200" height="900" fill="#24262a"/>
+    <rect x="-1000" y="0" width="3200" height="900" fill="#24262a"/>
     <g id="scene"><g id="cabin" clip-path="url(#sceneClip)">
       <!-- outside (moves as one when the car pitches) -->
       <g id="outside">
-      <rect id="skyRect" x="0" y="-60" width="1200" height="250" fill="url(#sky)"/>
-      <rect id="grassRect" x="0" y="180" width="1200" height="240" fill="#5b7f3a"/>
+      <rect id="skyRect" x="-1000" y="-60" width="3200" height="250" fill="url(#sky)"/>
+      <rect id="grassRect" x="-1000" y="180" width="3200" height="240" fill="#5b7f3a"/>
       <circle cx="260" cy="172" r="16" fill="#3d6b2a"/><circle cx="290" cy="176" r="11" fill="#3d6b2a"/>
       <circle cx="880" cy="172" r="18" fill="#3d6b2a"/><circle cx="915" cy="177" r="10" fill="#3d6b2a"/>
       <g id="road">
@@ -268,11 +276,11 @@
       <g id="roadside"></g>
       <polygon id="stopLine" points="0,0" fill="#f5f5f5" visibility="hidden"/>
       <g id="trafficAhead" visibility="hidden"><rect x="-0.9" y="-1.45" width="1.8" height="1.2" rx="0.25" fill="#1e88e5"/><rect x="-0.7" y="-1.4" width="1.4" height="0.45" rx="0.12" fill="#0d1b2a"/><rect x="-0.85" y="-0.6" width="0.35" height="0.18" fill="#e53935"/><rect x="0.5" y="-0.6" width="0.35" height="0.18" fill="#e53935"/><rect x="-0.9" y="-0.3" width="0.4" height="0.3" fill="#111"/><rect x="0.5" y="-0.3" width="0.4" height="0.3" fill="#111"/></g>
-      <rect id="nightShade" x="0" y="-60" width="1200" height="480" fill="#02040a" opacity="0" pointer-events="none"/>
+      <rect id="nightShade" x="-1000" y="-60" width="3200" height="480" fill="#02040a" opacity="0" pointer-events="none"/>
       </g>
       <g id="rain" pointer-events="none"></g>
       <!-- roof, A-pillars, side windows -->
-      <rect x="0" y="0" width="1200" height="32" fill="#2b2d31"/>
+      <rect x="-1000" y="0" width="3200" height="32" fill="#2b2d31"/>
 
       <!-- mirrors -->
       <rect x="590" y="0" width="20" height="38" rx="6" fill="#1b1d20"/>
@@ -367,17 +375,17 @@
 
       <!-- side windows (set lower, beside you) and doors -->
       <g class="ctl" id="shoulder" data-control="shoulder">
-        <polygon class="side-glass" points="0,0 132,0 110,396 0,470" fill="url(#sideWin)"/>
+        <polygon class="side-glass" points="-1000,0 132,0 110,396 0,470 -1000,560" fill="url(#sideWin)"/>
       </g>
-      <polygon class="side-glass" points="1200,0 1068,0 1090,396 1200,470" fill="url(#sideWin)"/>
+      <polygon class="side-glass" points="2200,0 1068,0 1090,396 1200,470 2200,560" fill="url(#sideWin)"/>
       <g id="trafficWindow" visibility="hidden" pointer-events="none"><rect x="0" y="250" width="105" height="70" rx="14" fill="#1e88e5"/><rect x="10" y="232" width="70" height="30" rx="8" fill="#1565c0"/><rect x="18" y="238" width="50" height="20" rx="4" fill="#90caf9"/><circle cx="25" cy="322" r="14" fill="#111"/><circle cx="88" cy="322" r="14" fill="#111"/></g>
-      <path d="M0 0 H215 L205 28 Q110 44 0 70 Z M1200 0 H985 L995 28 Q1090 44 1200 70 Z" fill="#2b2d31"/>
+      <path d="M-1000 0 H215 L205 28 Q110 44 0 70 L-1000 100 Z M2200 0 H985 L995 28 Q1090 44 1200 70 L2200 100 Z" fill="#2b2d31"/>
       <polygon points="128,0 218,0 154,362 106,398" fill="#2b2d31"/>
       <polygon points="1072,0 982,0 1046,362 1094,398" fill="#2b2d31"/>
       <path d="M218 0 L154 362 M982 0 L1046 362" stroke="#202226" stroke-width="3"/>
-      <polygon points="106,398 0,470 0,900 112,900 135,470" fill="#303237"/>
-      <polygon points="1094,398 1200,470 1200,900 1088,900 1065,470" fill="#303237"/>
-      <path d="M106 398 L0 470 M1094 398 L1200 470" stroke="#151618" stroke-width="7"/>
+      <polygon points="106,398 0,470 -1000,560 -1000,900 112,900 135,470" fill="#303237"/>
+      <polygon points="1094,398 1200,470 2200,560 2200,900 1088,900 1065,470" fill="#303237"/>
+      <path d="M106 398 L0 470 L-1000 560 M1094 398 L1200 470 L2200 560" stroke="#151618" stroke-width="7"/>
       <path d="M8 520 Q60 500 118 488 M1192 520 Q1140 500 1082 488" stroke="#1d1f22" stroke-width="10" stroke-linecap="round" fill="none"/>
       <rect x="70" y="470" width="34" height="10" rx="5" fill="url(#chrome)" transform="rotate(-14 87 475)"/>
       <rect x="1096" y="470" width="34" height="10" rx="5" fill="url(#chrome)" transform="rotate(14 1113 475)"/>
@@ -488,7 +496,7 @@
       <text class="label" x="672" y="752">Handbrake</text>
     </g></g>
     <g class="crash-overlay">
-      <rect x="0" y="0" width="1200" height="900" fill="#b71c1c" opacity=".25"/>
+      <rect x="-1000" y="0" width="3200" height="900" fill="#b71c1c" opacity=".25"/>
       <path d="M430 250 L300 120 M430 250 L560 90 M430 250 L640 260 M430 250 L330 340 M430 250 L470 340 M430 250 L230 230 M360 180 L320 200 M520 150 L560 175 M560 256 L590 300" stroke="#fff" stroke-width="3" fill="none"/>
       <text x="600" y="460" font-size="72" font-weight="800" fill="#fff" text-anchor="middle" stroke="#b71c1c" stroke-width="3" paint-order="stroke">CRASH!</text>
     </g>
@@ -2064,20 +2072,29 @@ const DOUBLE_TAP_MS = 300;
 const CLICK_SUPPRESS_MS = 400;
 let view = { ...FULL_VIEW };
 
+const MAX_SIDE_EXTENSION = 1000;
+
+// On phones the view keeps the full height and grows sideways to match the screen, so nothing is distorted.
 function baseView() {
-  return FULL_VIEW;
+  if (!PHONE_LANDSCAPE.matches) return FULL_VIEW;
+  const box = cockpit.getBoundingClientRect();
+  const aspect = box.height > 0 ? box.width / box.height : FULL_VIEW.w / FULL_VIEW.h;
+  const w = Math.min(FULL_VIEW.w + 2 * MAX_SIDE_EXTENSION, Math.max(FULL_VIEW.w, FULL_VIEW.h * aspect));
+  return { x: FULL_VIEW.x + (FULL_VIEW.w - w) / 2, y: FULL_VIEW.y, w, h: FULL_VIEW.h };
 }
 
 function setView(next) {
   view = next;
   cockpit.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
-  document.getElementById('zoomReset').hidden = view.w >= baseView().w;
+  document.getElementById("zoomReset").hidden = view.w >= baseView().w - 1;
 }
 
 function applyPhoneView() {
-  cockpit.setAttribute('preserveAspectRatio', PHONE_LANDSCAPE.matches ? 'none' : 'xMidYMid meet');
   setView({ ...baseView() });
 }
+
+window.addEventListener('resize', applyPhoneView);
+document.addEventListener('fullscreenchange', () => requestAnimationFrame(applyPhoneView));
 
 PHONE_LANDSCAPE.addEventListener('change', applyPhoneView);
 applyPhoneView();
@@ -2090,9 +2107,6 @@ let lastTapAt = 0;
 
 function meetGeometry(currentView) {
   const box = cockpit.getBoundingClientRect();
-  if (PHONE_LANDSCAPE.matches) {
-    return { box, scaleX: box.width / currentView.w, scaleY: box.height / currentView.h, offsetX: 0, offsetY: 0 };
-  }
   const scale = Math.min(box.width / currentView.w, box.height / currentView.h);
   return { box, scaleX: scale, scaleY: scale, offsetX: (box.width - currentView.w * scale) / 2, offsetY: (box.height - currentView.h * scale) / 2 };
 }
