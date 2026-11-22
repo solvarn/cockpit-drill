@@ -2250,22 +2250,33 @@ function renderPedalsOnly(game) {
   document.getElementById('status-prompt').textContent = statusFor(game, null).prompt;
 }
 
-const draggingPedals = new Set();
+// Mouse: the pedal follows the pointer's position. Touch: the pedal moves by how far the finger slides
+// (with extra gain), starting wherever you touch, so 90–100% never needs a swipe to the screen edge.
+const TOUCH_PEDAL_GAIN = 1.8;
+const draggingPedals = new Map();
 
 ['pointerup', 'pointercancel', 'blur'].forEach(type => window.addEventListener(type, () => draggingPedals.clear()));
+
+function touchDepth(drag, event) {
+  const slidPercent = (event.clientY - drag.startY) / drag.height * PERCENT * TOUCH_PEDAL_GAIN;
+  return Math.min(PERCENT, Math.max(0, drag.startDepth + slidPercent));
+}
 
 pedalTracks.forEach(track => {
   const pedal = track.dataset.pedal;
   track.addEventListener('pointerdown', event => {
-    draggingPedals.add(pedal);
+    const isTouch = event.pointerType === 'touch';
+    const height = track.querySelector('.pedal-hit').getBoundingClientRect().height;
+    draggingPedals.set(pedal, { isTouch, startY: event.clientY, startDepth: game.pedals[pedal], height });
     capturePointer(track, event.pointerId);
-    pressPedal(pedal, depthFromPointer(track, event));
+    if (!isTouch) pressPedal(pedal, depthFromPointer(track, event));
   });
   track.addEventListener('pointermove', event => {
-    const isButtonHeld = event.buttons !== 0;
+    const isButtonHeld = event.buttons !== 0 || event.pointerType === 'touch';
     if (!isButtonHeld) draggingPedals.delete(pedal);
-    if (!draggingPedals.has(pedal)) return;
-    pressPedal(pedal, depthFromPointer(track, event));
+    const drag = draggingPedals.get(pedal);
+    if (!drag) return;
+    pressPedal(pedal, drag.isTouch ? touchDepth(drag, event) : depthFromPointer(track, event));
   });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => track.addEventListener(type, () => draggingPedals.delete(pedal)));
 });
